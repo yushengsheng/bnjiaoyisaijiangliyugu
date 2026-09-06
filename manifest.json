@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "交易量排行榜统计器",
+  "version": "1.4.1",
+  "description": "在 Brave 中采集完整排行榜，并拆分统计全榜、前 N 名和其余排名交易量。",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_title": "打开排行榜统计器"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
