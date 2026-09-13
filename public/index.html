@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EventLens 活动分析 - 币安交易赛数据与成本量化工具</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f59e0b'/><text x='50%' y='68%' font-size='56' font-weight='900' text-anchor='middle' fill='%230f1115'>E</text></svg>">
+</head>
+<body>
+  <div class="page-shell">
+    <!-- 顶部 Header -->
+    <header class="site-header">
+      <div class="brand-block">
+        <div class="brand-row">
+          <span class="brand-mark">E</span>
+          <span class="brand-name">EventLens</span>
+          <span class="unofficial-badge">非官方</span>
+        </div>
+        <p class="brand-description">数字资产活动信息与奖励成本分析工具</p>
+      </div>
+      <div class="header-status">
+        <div id="schedulerStatusTag" class="price-pill" title="排行榜自动更新状态">
+          <span class="pulse-dot" style="background-color: var(--color-blue); box-shadow: 0 0 8px var(--color-blue);"></span>
+          <span id="schedulerStatusText">排行榜自动更新：读取中…</span>
+        </div>
+        <label class="auto-update-toggle" title="关闭后仅使用手动更新，选择会保存在本机">
+          <input id="autoUpdateToggle" type="checkbox">
+          <span>自动更新</span>
+        </label>
+        <div id="bnbPriceTag" class="price-pill">
+          <span class="pulse-dot"></span>
+          <span id="bnbPriceText">正在获取 BNB 行情…</span>
+        </div>
+        <button id="refreshBtn" class="action-pill" title="立即刷新行情与看板数据">
+          <span class="icon-refresh">↻</span> 刷新行情
+        </button>
+      </div>
+    </header>
+
+    <!-- 主工作区 -->
+    <main class="workspace">
+      <!-- 快速录入/添加排行榜链接栏 -->
+      <section class="quick-import-bar panel-subtle">
+        <div class="import-controls">
+          <div class="input-with-icon">
+            <span class="input-icon">🔗</span>
+            <input id="announcementInput" type="url" spellcheck="false" placeholder="直接粘贴币安排行榜链接，例如 https://www.binance.com/zh-CN/activity/trading-competition/spot-altcoin-festival-wave-THE-R1">
+          </div>
+          <button id="parseAnnouncementBtn" class="btn-primary" title="只需提供排行榜链接，自动提取币种、反查奖池规则并抓取数据">
+            <span class="btn-icon">＋</span> 添加监控
+          </button>
+          <button id="fetchLatestListBtn" class="btn-secondary" title="从币安官方公告列表中一键挑选交易赛">
+            <span class="btn-icon">📋</span> 官方最新活动
+          </button>
+        </div>
+        <div id="importNotice" class="import-hint hidden"></div>
+      </section>
+
+      <!-- 活动分类切换 Tab -->
+      <div class="view-tabs" aria-label="活动分类">
+        <button id="tabActive" class="view-tab active">进行中 <span id="countActive">0</span></button>
+        <button id="tabHistory" class="view-tab">历史活动 <span id="countHistory">0</span></button>
+      </div>
+
+      <!-- 活动选择按钮条 (滚动列表) -->
+      <div id="campaignList" class="campaign-list">
+        <!-- 由 JS 动态渲染 -->
+      </div>
+
+      <!-- 活动标题与状态 -->
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">活动概览</p>
+          <h1 id="currentCampaignName">加载中…</h1>
+        </div>
+        <div class="heading-tags">
+          <span id="currentStatusBadge" class="status-badge active-status">进行中</span>
+          <a id="currentLandingLink" href="#" target="_blank" rel="noopener noreferrer" class="link-badge">
+            币安官网活动页 ↗
+          </a>
+          <button id="deleteCampaignBtn" class="btn-secondary small" title="从监控列表中移除此活动" style="color: var(--color-red); border-color: rgba(239, 68, 68, 0.25);">
+            🗑️ 移除监控
+          </button>
+        </div>
+      </div>
+      <div id="detailStatus" class="detail-status hidden" role="status" aria-live="polite"></div>
+
+      <!-- 四宫格指标卡片 (EventLens 核心风格) -->
+      <section class="summary-grid">
+        <article class="summary-card orange">
+          <p>总奖池</p>
+          <strong id="summaryRewardPool">—</strong>
+          <span id="summaryRewardUsdt">估值计算中…</span>
+        </article>
+        <article class="summary-card dark">
+          <p>活动时间</p>
+          <strong id="summaryPeriodText">—</strong>
+          <span id="summaryPeriodDetail">UTC 时间</span>
+        </article>
+        <article class="summary-card green">
+          <p>赛区总交易量</p>
+          <strong id="summaryTotalVolume">—</strong>
+          <span id="summaryParticipantsCount">0 人参与</span>
+        </article>
+        <article class="summary-card blue">
+          <p id="summaryCutoffLabel">第 1000 名门槛</p>
+          <strong id="summaryCutoffVolume">—</strong>
+          <span id="summaryCutoffDetail">等待更新</span>
+        </article>
+      </section>
+
+      <!-- 实时数据：刷量成本与盘口点差分析 -->
+      <section class="live-analysis-section panel">
+        <div class="analysis-heading">
+          <div>
+            <p class="eyebrow">实时数据</p>
+            <h2>活动成本与盘口价差分析</h2>
+          </div>
+          <div class="cost-param-adjuster">
+            <label>
+              <span>基础费率:</span>
+              <input id="inputFeeRate" type="number" min="0" max="0.02" step="0.00005" value="0.00075" title="输入单边成交费率，例如使用 BNB 抵扣时为 0.00075">
+            </label>
+            <label>
+              <span>返佣比例:</span>
+              <input id="inputRebateRate" type="number" min="0" max="1" step="0.01" value="0.485" title="输入 0 到 1，例如 48.5% 填写 0.485">
+            </label>
+            <div class="calc-actual-rate">
+              实际费率: <b id="displayActualFeeRate">0.0386%</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="market-subhead">
+          <span id="marketUpdatedTime">行情更新：实时</span>
+          <span id="feeCostFormula">每实际成交 1,000 U 基准手续费：$0.386</span>
+        </div>
+
+        <!-- 参赛币对盘口卡片网格 -->
+        <div id="marketGrid" class="market-grid">
+          <!-- 由 JS 动态渲染各币对买卖价差与综合成本 -->
+        </div>
+      </section>
+
+      <!-- 排行榜统计与后段瓜分收益分析 -->
+      <section class="ranking-section panel">
+        <div class="ranking-heading">
+          <div>
+            <p class="eyebrow">LEADERBOARD ANALYSIS</p>
+            <h2>排行榜拆分与后段瓜分测算</h2>
+          </div>
+          <div class="ranking-actions">
+            <span id="rankingUpdateTime" class="time-tag">上次抓取：以币安为准</span>
+            <span id="nextCrawlCountdown" class="time-tag" style="color: var(--color-orange); font-weight: 600;">下次自动更新：计算中…</span>
+            <button id="triggerCrawlBtn" class="btn-primary small" style="background: var(--color-blue); color: #fff;" title="立即调起本地 Brave/Chrome 抓取当前活动排行榜，不改变全局自动检查时间">
+              ⚡ 立即更新排行榜
+            </button>
+            <button id="exportCsvBtn" class="btn-secondary small">导出完整分析 CSV</button>
+          </div>
+        </div>
+
+        <!-- 实时抓取动态进度面板 (抓取时平滑展示) -->
+        <div id="crawlProgressBarContainer" class="crawl-progress-box hidden">
+          <div class="progress-info-row">
+            <span id="crawlProgressText">正在打开本地 Brave/Chrome...</span>
+            <strong id="crawlProgressPercent">20%</strong>
+          </div>
+          <div class="progress-track-bg">
+            <div id="crawlProgressBarFill" class="progress-track-fill" style="width: 20%;"></div>
+          </div>
+        </div>
+
+        <!-- 前后段分段大卡片 -->
+        <div class="breakdown-grid">
+          <div class="breakdown-box">
+            <span class="box-title">全部有效参赛</span>
+            <strong id="statTotalUsers">— 人</strong>
+            <small id="statTotalVolume">$—</small>
+          </div>
+          <div class="breakdown-box">
+            <span id="statTopTitle" class="box-title">前 1,000 名统计</span>
+            <strong id="statTopUsers">1,000 人</strong>
+            <small id="statTopVolume">$—</small>
+          </div>
+          <div class="breakdown-box highlight">
+            <span id="statTailTitle" class="box-title">第 1,001 名起按比例瓜分</span>
+            <strong id="statTailUsers">— 人</strong>
+            <small id="statTailVolume">$—</small>
+          </div>
+        </div>
+
+        <!-- 收益与成本对比面板 (ROI 测算核心) -->
+        <div class="tail-reward-summary">
+          <div class="reward-estimate-card">
+            <span class="est-label">每新增 1,000 U 榜单计入量预计奖励</span>
+            <strong id="rewardPer1kToken" class="est-token">—</strong>
+            <span id="rewardPer1kUsdt" class="est-usd">≈ $— USDT</span>
+          </div>
+          <div class="reward-estimate-card accent">
+            <span class="est-label">每新增 10,000 U 榜单计入量预计奖励</span>
+            <strong id="rewardPer10kToken" class="est-token">—</strong>
+            <span id="rewardPer10kUsdt" class="est-usd">≈ $— USDT</span>
+          </div>
+          <div class="reward-estimate-card dark">
+            <span class="est-label">万 U 净收益 / 成本比例（最优币对）</span>
+            <strong id="netProfitPer10k" class="est-roi">—</strong>
+            <span id="roiFormulaNote" class="est-note">自动匹配最低磨损币对</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 本地历史趋势 -->
+      <section class="history-section panel">
+        <div class="reward-heading">
+          <div class="reward-icon">⌁</div>
+          <div>
+            <p class="eyebrow">LOCAL HISTORY</p>
+            <h2>本地成功快照趋势</h2>
+          </div>
+        </div>
+        <div id="trendGrid" class="trend-grid">
+          <div class="empty-state">完成两次以上排行榜更新后，将显示本地趋势。</div>
+        </div>
+      </section>
+
+      <!-- 奖励结构与阶梯门槛 (Tier Grid) -->
+      <section class="reward-section panel">
+        <div class="reward-heading">
+          <div class="reward-icon">↗</div>
+          <div>
+            <p class="eyebrow">REWARD STRUCTURE</p>
+            <h2>阶梯奖励与排名门槛</h2>
+          </div>
+        </div>
+        <div id="tierGrid" class="tier-grid">
+          <!-- 由 JS 动态渲染各阶段门槛与奖励 -->
+        </div>
+      </section>
+
+      <!-- 官方最新活动弹窗 (Modal) -->
+      <div id="announcementModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="announcementModalTitle">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="announcementModalTitle">币安官方最新活动公告</h3>
+            <button id="closeModalBtn" class="modal-close">&times;</button>
+          </div>
+          <div id="announcementListContainer" class="modal-body">
+            <div class="loading-spinner">正在加载官方公告…</div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="disclaimer">
+        行情和排行榜来自币安公开页面及公开接口；排行榜收益、手续费和买卖价差均为估算。本工具仅在本机运行，不构成任何投资建议。
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

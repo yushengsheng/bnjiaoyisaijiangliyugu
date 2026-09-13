@@ -1,12 +1,12 @@
 # 隐私说明
 
-交易量排行榜统计器不会将排行榜数据、浏览记录或用户设置上传到任何服务器。
+EventLens Local 是纯本地工具。
 
-- 排行榜请求和计算均在用户本机的 Brave/Chrome 浏览器内完成。
-- 扩展仅在用户点击“打开并连接”或“连接当前网页”后，对选定的目标域名启用采集脚本。
-- 历史摘要和设置保存在浏览器的 `chrome.storage.local` 中。
-- 扩展不收集登录凭据、API Key、钱包私钥或助记词。
-- 用户可以在扩展界面中删除单条历史记录，也可以通过浏览器删除扩展数据。
+- Web 服务仅监听 `127.0.0.1`，不对局域网或公网开放。
+- 活动配置、排行榜快照和历史趋势保存在本机 `data/` 目录。
+- 程序仅访问币安公开公告、公开排行榜和公开行情接口。
+- 程序不要求用户登录，不读取或保存币安 Cookie、API Key、资产、订单、钱包私钥或助记词。
+- 排行榜详细参与者记录只在一次采集的内存中用于完整性校验和汇总，不写入本地文件；本地仅保存聚合快照。
+- 用户可以通过页面删除活动及其本地快照，也可以停止程序后手动删除 `data/campaigns.json`、`data/snapshots.json` 和 `data/snapshot-history.json`。
 
-如有问题，请通过 GitHub Issues 联系维护者：
-https://github.com/yushengsheng/Trading-Volume-bn/issues
+项目地址：https://github.com/yushengsheng/Trading-Volume-bn

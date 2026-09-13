@@ -2,31 +2,42 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/manifest.json")
-NAME="Trading-Volume-bn-v$VERSION"
+VERSION=$(node -p "require('$ROOT/package.json').version")
+NAME="EventLens-Local-v$VERSION"
 DIST="$ROOT/dist"
 STAGE="$DIST/$NAME"
 ARCHIVE="$DIST/$NAME.zip"
 
 rm -rf "$STAGE" "$ARCHIVE"
-mkdir -p "$STAGE/icons"
+rm -f "$DIST"/EventLens-Local-v*.zip
+mkdir -p "$STAGE/lib" "$STAGE/public" "$STAGE/data"
 
-for file in manifest.json background.js bridge.js core.js dashboard.html dashboard.css dashboard.js page-hook.js README.md PRIVACY.md CHANGELOG.md; do
+for file in server.js package.json README.md PRIVACY.md CHANGELOG.md LICENSE start.sh start.bat Open-EventLens.command 双击打开.command; do
   cp "$ROOT/$file" "$STAGE/$file"
 done
-cp "$ROOT"/icons/*.png "$STAGE/icons/"
+cp "$ROOT"/lib/*.js "$STAGE/lib/"
+cp "$ROOT"/public/* "$STAGE/public/"
+cp "$ROOT"/data/seed-campaigns.json "$ROOT"/data/seed-snapshots.json "$STAGE/data/"
 
 cat >"$STAGE/INSTALL.txt" <<EOF
-交易量排行榜统计器 v$VERSION
+EventLens Local v$VERSION
 
-1. 打开 Brave，在地址栏输入 brave://extensions/
-2. 打开右上角“开发者模式”
-3. 点击“加载已解压的扩展程序”
-4. 选择当前文件夹（包含 manifest.json 的文件夹）
-5. 点击扩展图标开始使用
+Requirements:
+- Node.js 22 or newer
+- Brave Browser or Google Chrome (required for leaderboard updates)
 
-注意：GitHub Release ZIP 需要先解压。Brave 不允许直接从 GitHub 安装 ZIP/CRX；
-如需商店式一键安装和自动更新，需要另行发布到 Chrome Web Store。
+macOS:
+1. Double-click Open-EventLens.command
+2. If macOS blocks it, right-click and choose Open
+
+Windows:
+1. Double-click start.bat
+
+Manual:
+1. Run: node server.js
+2. Open: http://127.0.0.1:3000
+
+The service only listens on 127.0.0.1 and is not exposed to the LAN or internet.
 EOF
 
 (

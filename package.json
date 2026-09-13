@@ -1,0 +1,25 @@
+{
+  "name": "eventlens-local",
+  "version": "2.1.2",
+  "description": "本地运行的币安交易赛排行榜、奖励与买卖价差分析工具",
+  "private": true,
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:live": "node --test --test-concurrency=1 tests-live/*.test.js",
+    "package": "./scripts/package-release.sh"
+  },
+  "keywords": [
+    "binance",
+    "trading-competition",
+    "leaderboard",
+    "local-tool"
+  ],
+  "license": "MIT"
+}

@@ -1,3 +1,10 @@
 .DS_Store
 *.log
 dist/
+node_modules/
+data/campaigns.json
+data/snapshots.json
+data/snapshot-history.json
+data/settings.json
+data/*.tmp
+data/*.corrupt-*

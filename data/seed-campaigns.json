@@ -1,0 +1,870 @@
+[
+  {
+    "id": "spot-altcoin-festival-wave-SAHARA-R2",
+    "name": "SAHARA交易锦标赛：交易瓜分高达400 BNB奖池",
+    "market": "现货",
+    "token": "SAHARA",
+    "rewardToken": "BNB",
+    "rewardPool": "400 BNB",
+    "period": "09/04 至 09/11",
+    "startTime": "2026-09-04T10:00:00.000Z",
+    "endTime": "2026-09-11T10:00:00.000Z",
+    "status": "history",
+    "articleCode": "48854dbc962d40ce9d3ccd440e7783c1",
+    "landingUrl": "https://www.icnguxncf.com/activity/trading-competition/spot-altcoin-festival-wave-SAHARA-R2/Main-Reward",
+    "pairs": [
+      "SAHARA/USDT",
+      "SAHARA/USDC"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 12,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 12
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 10,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 10
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 8,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 8
+      },
+      {
+        "name": "第 4 名",
+        "rankFrom": 4,
+        "rankTo": 4,
+        "cutoffRank": 4,
+        "rewardPerUser": 6,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 6
+      },
+      {
+        "name": "第 5 名",
+        "rankFrom": 5,
+        "rankTo": 5,
+        "cutoffRank": 5,
+        "rewardPerUser": 4,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 4
+      },
+      {
+        "name": "第 6–20 名",
+        "rankFrom": 6,
+        "rankTo": 20,
+        "cutoffRank": 20,
+        "rewardPerUser": 2.6667,
+        "rewardToken": "BNB",
+        "userCount": 15,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 21–50 名",
+        "rankFrom": 21,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 1.3333,
+        "rewardToken": "BNB",
+        "userCount": 30,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 0.4267,
+        "rewardToken": "BNB",
+        "userCount": 150,
+        "totalTierReward": 64
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 0.07,
+        "rewardToken": "BNB",
+        "userCount": 800,
+        "totalTierReward": 56
+      }
+    ],
+    "otherReward": {
+      "pool": 80,
+      "token": "BNB",
+      "capPerUser": 0.05,
+      "cutoffRank": 1000
+    },
+    "cutoffLabel": "第 1000 名门槛",
+    "updatedAt": "2026-09-11T13:29:39.749Z",
+    "needsReview": false,
+    "rewardPoolAmount": 400,
+    "bonusRewards": []
+  },
+  {
+    "id": "202609tradersleague4-Spot-Carnival-Waves-Round1",
+    "name": "币安交易者联赛第四季：交易加密资产、bStocks 与 TradFi 资产，瓜分400万美元奖励",
+    "market": "现货",
+    "token": "SPOT",
+    "rewardToken": "BNB",
+    "rewardPool": "600 BNB",
+    "rewardPoolAmount": 600,
+    "period": "09/09 至 09/23",
+    "startTime": "2026-09-09T10:00:00.000Z",
+    "endTime": "2026-09-23T09:59:00.000Z",
+    "status": "active",
+    "articleCode": "ba0b084e46f04f8ebcfcf2e3429de5a4",
+    "landingUrl": "https://www.icnguxncf.com/activity/trading-competition/202609tradersleague4/Spot-Carnival-Waves-Round1",
+    "pairs": [
+      "XRP/USDT",
+      "SOL/USDT",
+      "DOGE/USDT",
+      "ENA/USDT",
+      "PUMP/USDT",
+      "ZEC/USDT",
+      "A/USDT",
+      "ALT/USDT",
+      "C/USDT",
+      "GALA/USDT",
+      "PARTI/USDT",
+      "HUMA/USDT",
+      "SXT/USDT",
+      "ZKC/USDT",
+      "CATI/USDT",
+      "MEME/USDT",
+      "ACE/USDT",
+      "LINEA/USDT"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 18,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 18
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 15,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 15
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 12,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 12
+      },
+      {
+        "name": "第 4 名",
+        "rankFrom": 4,
+        "rankTo": 4,
+        "cutoffRank": 4,
+        "rewardPerUser": 9,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 9
+      },
+      {
+        "name": "第 5 名",
+        "rankFrom": 5,
+        "rankTo": 5,
+        "cutoffRank": 5,
+        "rewardPerUser": 6,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 6
+      },
+      {
+        "name": "第 6–20 名",
+        "rankFrom": 6,
+        "rankTo": 20,
+        "cutoffRank": 20,
+        "rewardPerUser": 4,
+        "rewardToken": "BNB",
+        "userCount": 15,
+        "totalTierReward": 60
+      },
+      {
+        "name": "第 21–50 名",
+        "rankFrom": 21,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 2,
+        "rewardToken": "BNB",
+        "userCount": 30,
+        "totalTierReward": 60
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 0.64,
+        "rewardToken": "BNB",
+        "userCount": 150,
+        "totalTierReward": 96
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 0.105,
+        "rewardToken": "BNB",
+        "userCount": 800,
+        "totalTierReward": 84
+      }
+    ],
+    "otherReward": {
+      "pool": 120,
+      "token": "BNB",
+      "capPerUser": 0.08,
+      "cutoffRank": 1000
+    },
+    "bonusRewards": [
+      {
+        "name": "限时冲刺奖励（2 轮）",
+        "roundCount": 2,
+        "totalReward": 120,
+        "rewardToken": "BNB",
+        "details": [
+          {
+            "name": "第 1 名",
+            "rankFrom": 1,
+            "rankTo": 1,
+            "rewardsPerRound": [
+              18,
+              18
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 2 名",
+            "rankFrom": 2,
+            "rankTo": 2,
+            "rewardsPerRound": [
+              15,
+              15
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 3 名",
+            "rankFrom": 3,
+            "rankTo": 3,
+            "rewardsPerRound": [
+              12,
+              12
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 4 名",
+            "rankFrom": 4,
+            "rankTo": 4,
+            "rewardsPerRound": [
+              9,
+              9
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 5 名",
+            "rankFrom": 5,
+            "rankTo": 5,
+            "rewardsPerRound": [
+              6,
+              6
+            ],
+            "rewardToken": "BNB"
+          }
+        ]
+      }
+    ],
+    "cutoffLabel": "第 1000 名门槛",
+    "needsReview": false,
+    "reviewReasons": [],
+    "updatedAt": "2026-09-13T00:57:18.292Z",
+    "resourceId": 100022561,
+    "topN": 1000,
+    "cutoffRank": 1000,
+    "pairMultipliers": {
+      "A/USDT": 1.2,
+      "ALT/USDT": 1.2,
+      "C/USDT": 1.2,
+      "GALA/USDT": 1.2,
+      "PARTI/USDT": 1.2,
+      "HUMA/USDT": 1.2,
+      "SXT/USDT": 1.2,
+      "ZKC/USDT": 1.2,
+      "CATI/USDT": 1.2,
+      "MEME/USDT": 1.2,
+      "ACE/USDT": 1.2,
+      "LINEA/USDT": 1.2
+    }
+  },
+  {
+    "id": "spot-altcoin-festival-wave-HOLO-R1",
+    "name": "HOLO交易锦标赛：交易瓜分高达400 BNB奖池",
+    "market": "现货",
+    "token": "HOLO",
+    "rewardToken": "BNB",
+    "rewardPool": "400 BNB",
+    "period": "09/09 至 09/16",
+    "startTime": "2026-09-09T10:00:00.000Z",
+    "endTime": "2026-09-16T10:00:00.000Z",
+    "status": "active",
+    "articleCode": "e84320eea3f04f9894a2e3a537dbbb5c",
+    "landingUrl": "https://www.icnguxncf.com/activity/trading-competition/spot-altcoin-festival-wave-HOLO-R1/Main-Reward",
+    "pairs": [
+      "HOLO/USDT",
+      "HOLO/USDC"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 12,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 12
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 10,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 10
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 8,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 8
+      },
+      {
+        "name": "第 4 名",
+        "rankFrom": 4,
+        "rankTo": 4,
+        "cutoffRank": 4,
+        "rewardPerUser": 6,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 6
+      },
+      {
+        "name": "第 5 名",
+        "rankFrom": 5,
+        "rankTo": 5,
+        "cutoffRank": 5,
+        "rewardPerUser": 4,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 4
+      },
+      {
+        "name": "第 6–20 名",
+        "rankFrom": 6,
+        "rankTo": 20,
+        "cutoffRank": 20,
+        "rewardPerUser": 2.66666667,
+        "rewardToken": "BNB",
+        "userCount": 15,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 21–50 名",
+        "rankFrom": 21,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 1.33333333,
+        "rewardToken": "BNB",
+        "userCount": 30,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 0.42666667,
+        "rewardToken": "BNB",
+        "userCount": 150,
+        "totalTierReward": 64
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 0.07,
+        "rewardToken": "BNB",
+        "userCount": 800,
+        "totalTierReward": 56
+      }
+    ],
+    "otherReward": {
+      "pool": 80,
+      "token": "BNB",
+      "capPerUser": 0.05,
+      "cutoffRank": 1000
+    },
+    "cutoffLabel": "第 1000 名门槛",
+    "updatedAt": "2026-09-12T14:52:04.525Z",
+    "needsReview": false,
+    "rewardPoolAmount": 400,
+    "resourceId": 100023837,
+    "reviewReasons": [],
+    "bonusRewards": [
+      {
+        "name": "分轮排名奖励（2 轮）",
+        "roundCount": 2,
+        "totalReward": 80,
+        "rewardToken": "BNB",
+        "details": [
+          {
+            "name": "第 1 名",
+            "rankFrom": 1,
+            "rankTo": 1,
+            "rewardsPerRound": [
+              12,
+              12
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 2 名",
+            "rankFrom": 2,
+            "rankTo": 2,
+            "rewardsPerRound": [
+              10,
+              10
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 3 名",
+            "rankFrom": 3,
+            "rankTo": 3,
+            "rewardsPerRound": [
+              8,
+              8
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 4 名",
+            "rankFrom": 4,
+            "rankTo": 4,
+            "rewardsPerRound": [
+              6,
+              6
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 5 名",
+            "rankFrom": 5,
+            "rankTo": 5,
+            "rewardsPerRound": [
+              4,
+              4
+            ],
+            "rewardToken": "BNB"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "spot-altcoin-festival-wave-THE-R1",
+    "name": "THE交易锦标赛：交易瓜分高达400 BNB奖池",
+    "market": "现货",
+    "token": "THE",
+    "rewardToken": "BNB",
+    "rewardPool": "400 BNB",
+    "period": "09/10 至 09/17",
+    "startTime": "2026-09-10T10:00:00.000Z",
+    "endTime": "2026-09-17T10:00:00.000Z",
+    "status": "active",
+    "articleCode": "9914db97181f443a9fc3a3e3ef726996",
+    "landingUrl": "https://www.icnguxncf.com/zh-CN/activity/trading-competition/spot-altcoin-festival-wave-THE-R1/Main-Reward",
+    "pairs": [
+      "THE/USDT",
+      "THE/USDC"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 12,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 12
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 10,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 10
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 8,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 8
+      },
+      {
+        "name": "第 4 名",
+        "rankFrom": 4,
+        "rankTo": 4,
+        "cutoffRank": 4,
+        "rewardPerUser": 6,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 6
+      },
+      {
+        "name": "第 5 名",
+        "rankFrom": 5,
+        "rankTo": 5,
+        "cutoffRank": 5,
+        "rewardPerUser": 4,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": 4
+      },
+      {
+        "name": "第 6–20 名",
+        "rankFrom": 6,
+        "rankTo": 20,
+        "cutoffRank": 20,
+        "rewardPerUser": 2.6667,
+        "rewardToken": "BNB",
+        "userCount": 15,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 21–50 名",
+        "rankFrom": 21,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 1.3333,
+        "rewardToken": "BNB",
+        "userCount": 30,
+        "totalTierReward": 40
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 0.4267,
+        "rewardToken": "BNB",
+        "userCount": 150,
+        "totalTierReward": 64
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 0.07,
+        "rewardToken": "BNB",
+        "userCount": 800,
+        "totalTierReward": 56
+      }
+    ],
+    "otherReward": {
+      "pool": 80,
+      "token": "BNB",
+      "capPerUser": 0.05,
+      "cutoffRank": 1000
+    },
+    "cutoffLabel": "第 1000 名门槛",
+    "updatedAt": "2026-09-12T14:09:33.710Z",
+    "needsReview": false,
+    "resourceId": 100023944,
+    "rewardPoolAmount": 400,
+    "bonusRewards": []
+  },
+  {
+    "id": "spot-altcoin-festival-wave-ENSO1",
+    "name": "ENSO 交易量锦标赛：交易瓜分高达 400 BNB 奖池",
+    "market": "现货",
+    "token": "ENSO",
+    "rewardToken": "BNB",
+    "rewardPool": "400 BNB",
+    "period": "08/28 至 09/04",
+    "startTime": "2026-08-28T10:00:00.000Z",
+    "endTime": "2026-09-04T10:00:00.000Z",
+    "status": "history",
+    "articleCode": "5f5c4f512b7741e7973b4a518e712302",
+    "landingUrl": "https://www.icnguxncf.com/zh-CN/activity/trading-competition/spot-altcoin-festival-wave-ENSO1/Main-Reward",
+    "pairs": [
+      "ENSO/USDT",
+      "ENSO/USDC"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 12,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 10,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 8,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 4 名",
+        "rankFrom": 4,
+        "rankTo": 4,
+        "cutoffRank": 4,
+        "rewardPerUser": 6,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 5 名",
+        "rankFrom": 5,
+        "rankTo": 5,
+        "cutoffRank": 5,
+        "rewardPerUser": 4,
+        "rewardToken": "BNB",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 6–20 名",
+        "rankFrom": 6,
+        "rankTo": 20,
+        "cutoffRank": 20,
+        "rewardPerUser": 2.6667,
+        "rewardToken": "BNB",
+        "userCount": 15,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 21–50 名",
+        "rankFrom": 21,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 1.3333,
+        "rewardToken": "BNB",
+        "userCount": 30,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 0.4267,
+        "rewardToken": "BNB",
+        "userCount": 150,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 0.07,
+        "rewardToken": "BNB",
+        "userCount": 800,
+        "totalTierReward": null
+      }
+    ],
+    "otherReward": {
+      "pool": 80,
+      "token": "BNB",
+      "capPerUser": 0.06,
+      "cutoffRank": 1000
+    },
+    "cutoffLabel": "第 1000 名门槛",
+    "updatedAt": "2026-08-28T10:00:00.000Z",
+    "needsReview": false,
+    "rewardPoolAmount": 400,
+    "bonusRewards": []
+  },
+  {
+    "id": "spot-trading-festival-wave-r3",
+    "name": "现货交易量锦标赛第三期：交易瓜分高达 500,000 USDC 奖池",
+    "market": "现货",
+    "token": "MULTI",
+    "rewardToken": "USDC",
+    "rewardPool": "500,000 USDC",
+    "period": "08/25 至 09/08",
+    "startTime": "2026-08-25T10:00:00.000Z",
+    "endTime": "2026-09-08T10:00:00.000Z",
+    "status": "history",
+    "articleCode": "",
+    "landingUrl": "https://www.icnguxncf.com/zh-CN/activity/trading-competition/spot-trading-festival-wave-r3/Main-Reward",
+    "pairs": [
+      "SOL/USDC",
+      "ETH/USDC",
+      "BTC/USDC"
+    ],
+    "minVolumeUsd": 500,
+    "tiers": [
+      {
+        "name": "第 1 名",
+        "rankFrom": 1,
+        "rankTo": 1,
+        "cutoffRank": 1,
+        "rewardPerUser": 15000,
+        "rewardToken": "USDC",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 2 名",
+        "rankFrom": 2,
+        "rankTo": 2,
+        "cutoffRank": 2,
+        "rewardPerUser": 12000,
+        "rewardToken": "USDC",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 3 名",
+        "rankFrom": 3,
+        "rankTo": 3,
+        "cutoffRank": 3,
+        "rewardPerUser": 10000,
+        "rewardToken": "USDC",
+        "userCount": 1,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 4–10 名",
+        "rankFrom": 4,
+        "rankTo": 10,
+        "cutoffRank": 10,
+        "rewardPerUser": 5000,
+        "rewardToken": "USDC",
+        "userCount": 7,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 11–50 名",
+        "rankFrom": 11,
+        "rankTo": 50,
+        "cutoffRank": 50,
+        "rewardPerUser": 2500,
+        "rewardToken": "USDC",
+        "userCount": 40,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 51–200 名",
+        "rankFrom": 51,
+        "rankTo": 200,
+        "cutoffRank": 200,
+        "rewardPerUser": 800,
+        "rewardToken": "USDC",
+        "userCount": 150,
+        "totalTierReward": null
+      },
+      {
+        "name": "第 201–1000 名",
+        "rankFrom": 201,
+        "rankTo": 1000,
+        "cutoffRank": 1000,
+        "rewardPerUser": 150,
+        "rewardToken": "USDC",
+        "userCount": 800,
+        "totalTierReward": null
+      }
+    ],
+    "otherReward": {
+      "pool": 100000,
+      "token": "USDC",
+      "capPerUser": 60,
+      "cutoffRank": 1000
+    },
+    "cutoffLabel": "第 1000 名门槛",
+    "updatedAt": "2026-08-25T10:00:00.000Z",
+    "needsReview": false,
+    "rewardPoolAmount": 500000,
+    "bonusRewards": []
+  }
+]
