@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
@@ -59,7 +60,7 @@ test("抓榜失败会安全收起进度框且按钮说明符合固定调度语�
 test("无后段数据时显示真实原因而不是误报奖励币价格不可用", () => {
   assert.match(app, /no-tail-users/);
   assert.match(app, /当前人数尚未进入后段/);
-  assert.match(app, /ranking\.rewardPer1k === null \? rewardUnavailable/);
+  assert.match(app, /ranking\.rewardPer1k === null \? unavailable1k/);
 });
 
 test("历史活动跳过详情行情轮询且部分盘口 ROI 明确标注范围", () => {
@@ -81,4 +82,27 @@ test("390px 断点对标题、操作区和面板执行纵向布局", () => {
   assert.match(css, /\.section-heading \{ flex-direction: column/);
   assert.match(css, /\.ranking-actions \{ display: grid/);
   assert.match(css, /overflow-x: hidden/);
+});
+
+test("活动卡片保留完整官方标题，MULTI 不覆盖名称且动态内容安全转义", () => {
+  const container = { innerHTML: "", querySelectorAll: () => [] };
+  const context = { document: { getElementById: () => container } };
+  const source = app.replace("  init();\n})();", "  globalThis.ui = { state, renderCampaignButtons };\n})();");
+  assert.notEqual(source, app);
+  vm.runInNewContext(source, context);
+  const names = [
+    "现货交易锦标赛：交易瓜分高达300,000 USDC奖池",
+    "现货赛第一期：多币种奖励",
+    "SAHARA交易锦标赛：交易瓜分高达400 BNB奖池"
+  ];
+  for (const tab of ["active", "history"]) {
+    context.ui.state.currentTab = tab;
+    context.ui.state.campaigns[tab] = names.map((name, index) => ({ id: String(index), name, token: "MULTI", status: tab }));
+    context.ui.renderCampaignButtons();
+    for (const name of names) assert.ok(container.innerHTML.includes(`<strong>${name}</strong>`));
+  }
+  context.ui.state.campaigns.history = [{ id: "<id>", name: '<img src=x onerror="bad">', token: "MULTI" }];
+  context.ui.renderCampaignButtons();
+  assert.ok(container.innerHTML.includes("&lt;img"));
+  assert.ok(!container.innerHTML.includes("<img"));
 });

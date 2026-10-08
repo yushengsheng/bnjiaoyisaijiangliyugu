@@ -1,0 +1,8 @@
+#!/bin/bash
+set -eu
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+mkdir -p "$ROOT/data"
+if ! "$ROOT/start.sh" --desktop >>"$ROOT/data/desktop-launch.log" 2>&1; then
+  /usr/bin/open -t "$ROOT/data/desktop-launch.log"
+  exit 1
+fi

@@ -3,6 +3,17 @@ const assert = require("node:assert/strict");
 const { buildExactSnapshot, parseVolume, toMicros, findSourceUpdatedAt, PAGE_LOAD_ATTEMPTS, getRequestedSubTrack, findConfiguredResourceId, extractEligiblePairsFromPageText, campaignPatchFromSnapshot, findCampaignForImmediate } = require("../lib/crawler");
 const { mockPage } = require("./helpers");
 
+test("优先输入域名，备用主机不改变活动与子赛道，也不重复抓同一URL", () => {
+  const { getLeaderboardUrls } = require("../lib/crawler");
+  const pathname = "/zh-CN/activity/trading-competition/202609tradersleague4/Spot-Carnival-Waves-Round2";
+  assert.deepEqual(getLeaderboardUrls(`https://www.cagxfucoftt.com${pathname}?utm_source=test`), [
+    `https://www.cagxfucoftt.com${pathname}`, `https://www.binance.com${pathname}`, `https://www.icnguxncf.com${pathname}`
+  ]);
+  assert.deepEqual(getLeaderboardUrls(`https://www.icnguxncf.com${pathname}`), [
+    `https://www.icnguxncf.com${pathname}`, `https://www.binance.com${pathname}`
+  ]);
+});
+
 test("活动页在放弃前会自动加载或刷新三次", () => {
   assert.equal(PAGE_LOAD_ATTEMPTS, 3);
 });
@@ -27,6 +38,15 @@ test("交易者联赛子赛道可从页面配置精确绑定 Resource ID", () =>
   assert.deepEqual(campaignPatchFromSnapshot({ resourceId: null, pairs: ["XRP/USDT", "A/USDT"] }, { resourceId: 100022561, eligiblePairs: ["A/USDT"] }), {
     resourceId: 100022561
   });
+});
+
+test("指定活动页倍率覆盖公告旧倍率，同时保留其他币对且拒绝缩减集合", () => {
+  const campaign = { pairs: ["A/USDT", "HUMA/USDT"], pairMultipliers: { "A/USDT": 1.2, "HUMA/USDT": 1.2 } };
+  assert.deepEqual(campaignPatchFromSnapshot(campaign, {
+    eligiblePairs: ["BTC/USDT", "A/USDT", "HUMA/USDT"],
+    eligiblePairMultipliers: { "BTC/USDT": 1, "A/USDT": 1.2, "HUMA/USDT": 1.5, "WRONG/USDT": 5 }
+  }), { pairs: ["BTC/USDT", "A/USDT", "HUMA/USDT"], pairMultipliers: { "BTC/USDT": 1, "A/USDT": 1.2, "HUMA/USDT": 1.5 } });
+  assert.deepEqual(campaignPatchFromSnapshot(campaign, { eligiblePairs: ["A/USDT"], eligiblePairMultipliers: { "A/USDT": 1.5 } }), {});
 });
 
 test("手动调度只按活动 ID 精确匹配", () => {
@@ -73,11 +93,25 @@ test("分页重复参与者会被完整性校验拒绝", () => {
 
 test("乱序排名和无效交易量会指出具体页行，同时允许并列名次", () => {
   const tiedRanks = mockPage(1, 3, 3, { volumes: [5, 4, 4], sequences: [1, 2, 2] });
-  assert.equal(buildExactSnapshot({ resourceId: 123, pages: [tiedRanks], cutoffRank: 2 }).eligibleUserCount, 3);
+  const tied = buildExactSnapshot({ resourceId: 123, pages: [tiedRanks], cutoffRank: 2 });
+  assert.equal(tied.eligibleUserCount, 3);
+  assert.equal(tied.cutoffTied, true);
   const wrongRank = mockPage(1, 3, 3, { volumes: [5, 4, 3], sequences: [1, 3, 2] });
   assert.throws(() => buildExactSnapshot({ resourceId: 123, pages: [wrongRank], cutoffRank: 1 }), /排名顺序异常：第 1 页第 3 行/);
   const invalidVolume = mockPage(1, 2, 2, { volumes: [5, "not-a-volume"] });
   assert.throws(() => buildExactSnapshot({ resourceId: 123, pages: [invalidVolume], cutoffRank: 1 }), /交易量无效：第 1 页第 2 行/);
+});
+
+test("缺少稳定用户标识或跨页源时间变化时拒绝生成完整快照", () => {
+  const noIdentity = mockPage(1, 1, 1, { volumes: [500] });
+  delete noIdentity.data.resourceSummaryList.data[0].userId;
+  delete noIdentity.data.resourceSummaryList.data[0].optInId;
+  assert.throws(() => buildExactSnapshot({ resourceId: 123, pages: [noIdentity] }), /参与者标识/);
+  const pages = [
+    mockPage(1, 1, 2, { volumes: [600], updateTime: 1789171200000 }),
+    mockPage(2, 1, 2, { volumes: [500], updateTime: 1789171260000 })
+  ];
+  assert.throws(() => buildExactSnapshot({ resourceId: 123, pages }), /源时间不一致/);
 });
 
 test("官方聚合总量允许一美分工程误差，超过后仍拒绝保存", () => {
@@ -101,6 +135,12 @@ test("参与人数小于门槛时后段为 0 且门槛显示不可用", () => {
   assert.equal(result.otherEligibleUserCount, 0);
   assert.equal(result.otherEligibleTradingVolume, 0);
   assert.equal(result.cutoff1000Volume, null);
+});
+
+test("分界为零时所有上榜量属于后段，不被默认1000覆盖", () => {
+  const result = buildExactSnapshot({ resourceId: 123, pages: [mockPage(1, 2, 2, { volumes: [600, 500] })], cutoffRank: 0 });
+  assert.equal(result.topRankUserCount, 0);
+  assert.equal(result.otherEligibleTradingVolume, 1100);
 });
 
 test("源更新时间只来自上游元数据，不读取参与者记录或采集时间", () => {

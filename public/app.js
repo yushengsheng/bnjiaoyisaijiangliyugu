@@ -25,6 +25,7 @@
   };
 
   const $ = id => document.getElementById(id);
+  const hasNumber = value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
   const escapeHtml = value => String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -35,22 +36,22 @@
   const formatters = {
     money(value, digits = 2) {
       const number = Number(value);
-      if (!Number.isFinite(number)) return "$—";
+      if (!hasNumber(value)) return "$—";
       return `$${number.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
     },
     number(value, digits = 0) {
       const number = Number(value);
-      if (!Number.isFinite(number)) return "—";
+      if (!hasNumber(value)) return "—";
       return number.toLocaleString("en-US", { maximumFractionDigits: digits });
     },
     token(value, digits = 8) {
       const number = Number(value);
-      if (!Number.isFinite(number)) return "—";
+      if (!hasNumber(value)) return "—";
       return number.toLocaleString("en-US", { maximumFractionDigits: digits });
     },
     compact(value) {
       const number = Number(value);
-      if (!Number.isFinite(number)) return "$—";
+      if (!hasNumber(value)) return "$—";
       if (number >= 1e9) return `$${(number / 1e9).toFixed(2)}B`;
       if (number >= 1e6) return `$${(number / 1e6).toFixed(2)}M`;
       if (number >= 1e3) return `$${(number / 1e3).toFixed(2)}K`;
@@ -62,6 +63,39 @@
       return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { hour12: false }) : fallback;
     }
   };
+
+  function rewardPriceFor(token) {
+    const ranking = state.rankingData;
+    const price = ranking?.rewardPricesUsdt?.[token]
+      ?? (token === ranking?.otherRewardToken ? ranking?.rewardTokenPrice : null);
+    return hasNumber(price) && Number(price) > 0 ? Number(price) : null;
+  }
+
+  function rewardStatusText(status) {
+    return {
+      "available": "可估算",
+      "no-tail-pool": "后段奖励池待核对",
+      "no-tail-users": "当前人数尚未进入后段",
+      "no-tail-volume": "暂无后段交易量数据",
+      "ranked-volume": "已达到排名奖励门槛，请查看阶梯奖励",
+      "unknown-cutoff": "排名门槛未知，暂不估算后段奖励",
+      "rank-tie": "排名边界存在并列，请核对分配规则",
+      "rules-unverified": "活动规则待核对，暂不估算奖励",
+      "unsupported-distribution": "后段分配方式待核对"
+    }[status] || "奖励估算不可用";
+  }
+
+  function calculateRoi() {
+    const ranking = state.rankingData;
+    const reward = ranking?.rewardPer10kUsdtUnrounded ?? ranking?.rewardPer10kUsdt;
+    if (!ranking || !hasNumber(ranking.rewardPer10k) || !hasNumber(reward)) return null;
+    const best = [...(state.marketData?.markets || [])]
+      .filter(pair => hasNumber(pair.totalCostPer10k) && pair.totalCostPer10k >= 0)
+      .sort((a, b) => a.totalCostPer10k - b.totalCostPer10k)[0];
+    if (!best) return null;
+    const net = Number(reward) - best.totalCostPer10k;
+    return { best, net, ratio: best.totalCostPer10k > 0 ? net / best.totalCostPer10k * 100 : null };
+  }
 
   async function api(path, options = {}, allowSessionRetry = true) {
     const method = options.method || "GET";
@@ -164,6 +198,9 @@
     state.rankingData = null;
     state.marketData = null;
     state.historyData = [];
+    $("rankingUpdateTime").textContent = "等待排行榜数据";
+    $("marketUpdatedTime").textContent = "正在读取行情…";
+    $("roiFormulaNote").textContent = "等待完整排行榜和行情";
     $("summaryTotalVolume").textContent = "$—";
     $("summaryParticipantsCount").textContent = "等待排行榜数据";
     $("summaryCutoffVolume").textContent = "$—";
@@ -200,6 +237,7 @@
     renderCampaignButtons();
     renderCampaignHeader();
     clearDetailData();
+    renderSummaryCards();
     await loadCurrentCampaignDetails();
   }
 
@@ -305,10 +343,10 @@
     }
     container.innerHTML = list.map(item => {
       const statusText = item.needsReview ? "[待核对]" : item.status === "history" ? "[已结束]" : "";
-      const shortName = String(item.name || item.token || "活动").replace(/现货交易锦标赛.*|现货赛.*/, "") || item.token;
+      const title = String(item.name || "").trim() || `${item.token || "未知"} 交易活动`;
       return `<button class="campaign-button ${item.id === state.currentCampaignId ? "selected" : ""}" data-campaign-id="${escapeHtml(item.id)}">
         <span class="campaign-token">${escapeHtml(item.token || "—")}</span>
-        <span class="campaign-meta"><strong>${escapeHtml(shortName)}</strong><small>${escapeHtml(item.market || "现货")}交易活动 ${statusText ? `<em>${escapeHtml(statusText)}</em>` : ""}</small></span>
+        <span class="campaign-meta"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(item.market || "现货")}交易活动 ${statusText ? `<em>${escapeHtml(statusText)}</em>` : ""}</small></span>
       </button>`;
     }).join("");
     container.querySelectorAll("[data-campaign-id]").forEach(button => {
@@ -343,9 +381,20 @@
     const campaign = state.currentCampaign;
     const ranking = state.rankingData;
     if (!campaign) return;
+    const tailCap = ranking ? ranking.otherRewardCap : campaign.otherReward?.capPerUser;
+    const tailToken = ranking?.otherRewardToken || campaign.otherReward?.token || campaign.rewardToken || "奖励币";
+    const hasTailCap = hasNumber(tailCap) && Number(tailCap) >= 0;
+    const tailPrice = rewardPriceFor(tailToken);
+    $("statTailCap").textContent = hasTailCap
+      ? `${formatters.token(tailCap)} ${tailToken}`
+      : campaign.otherReward && !campaign.needsReview ? "未设置上限" : "待核对";
+    $("statTailCapUsdt").textContent = hasTailCap
+      ? tailPrice === null ? "奖励币价格不可用"
+        : `≈ ${(Number(tailCap) * tailPrice).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`
+      : "";
     $("summaryRewardPool").textContent = campaign.rewardPool || "待核对";
     const pool = parsePool(campaign);
-    const rewardPrice = ranking?.rewardTokenPrice;
+    const rewardPrice = rewardPriceFor(pool?.token);
     $("summaryRewardUsdt").textContent = pool && rewardPrice
       ? `≈ ${formatters.money(pool.amount * rewardPrice, 0)} USDT`
       : "奖励币价格不可用或奖池待核对";
@@ -358,7 +407,8 @@
       $("summaryTotalVolume").textContent = formatters.compact(ranking.eligibleTradingVolume);
       $("summaryParticipantsCount").textContent = `${formatters.number(ranking.eligibleUserCount)} 人达标`;
       $("summaryCutoffLabel").textContent = `第 ${formatters.number(ranking.cutoffRank)} 名门槛`;
-      $("summaryCutoffVolume").textContent = Number.isFinite(Number(ranking.cutoff1000Volume)) ? formatters.money(ranking.cutoff1000Volume) : "人数未达到门槛";
+      $("summaryCutoffVolume").textContent = hasNumber(ranking.cutoff1000Volume) ? formatters.money(ranking.cutoff1000Volume)
+        : ranking.eligibleUserCount < ranking.cutoffRank ? "人数未达到门槛" : "排名门槛未知";
       $("summaryCutoffDetail").textContent = ranking.sourceUpdatedAt
         ? `源数据：${formatters.time(ranking.sourceUpdatedAt)}`
         : `采集于：${formatters.time(ranking.collectedAt)}`;
@@ -410,38 +460,36 @@
     $("statTopTitle").textContent = `前 ${formatters.number(ranking.topRankUserCount)} 名统计`;
     $("statTopUsers").textContent = `${formatters.number(ranking.topRankUserCount)} 人`;
     $("statTopVolume").textContent = formatters.money(ranking.topRankingTradingVolume);
-    $("statTailTitle").textContent = `第 ${formatters.number(ranking.topRankUserCount + 1)} 名起按比例瓜分`;
+    $("statTailTitle").textContent = `第 ${formatters.number(ranking.cutoffRank + 1)} 名起${ranking.distribution === "equal" ? "按人数均分" : "按比例瓜分"}`;
     $("statTailUsers").textContent = `${formatters.number(ranking.otherEligibleUserCount)} 人`;
     $("statTailVolume").textContent = formatters.money(ranking.otherEligibleTradingVolume);
 
     const token = ranking.otherRewardToken || "奖励币";
-    const unavailableLabels = {
-      "no-tail-pool": "后段奖励池待核对",
-      "no-tail-users": "当前人数尚未进入后段",
-      "no-tail-volume": "暂无后段交易量数据"
-    };
-    const rewardUnavailable = unavailableLabels[ranking.rewardEstimateStatus] || "奖励估算不可用";
+    const unavailable1k = rewardStatusText(ranking.rewardPer1kStatus || ranking.rewardEstimateStatus);
+    const unavailable10k = rewardStatusText(ranking.rewardPer10kStatus || ranking.rewardEstimateStatus);
     $("rewardPer1kToken").textContent = ranking.rewardPer1k === null ? "—" : `${formatters.token(ranking.rewardPer1k)} ${token}`;
-    $("rewardPer1kUsdt").textContent = ranking.rewardPer1k === null ? rewardUnavailable : ranking.rewardPer1kUsdt === null ? "奖励币价格不可用" : `≈ ${formatters.money(ranking.rewardPer1kUsdt, 4)} USDT`;
+    $("rewardPer1kUsdt").textContent = ranking.rewardPer1k === null ? unavailable1k : ranking.rewardPer1kUsdt === null ? "奖励币价格不可用" : `≈ ${formatters.money(ranking.rewardPer1kUsdt, 4)} USDT`;
     $("rewardPer10kToken").textContent = ranking.rewardPer10k === null ? "—" : `${formatters.token(ranking.rewardPer10k)} ${token}`;
-    $("rewardPer10kUsdt").textContent = ranking.rewardPer10k === null ? rewardUnavailable : ranking.rewardPer10kUsdt === null ? "奖励币价格不可用" : `≈ ${formatters.money(ranking.rewardPer10kUsdt)} USDT`;
+    $("rewardPer10kUsdt").textContent = ranking.rewardPer10k === null ? unavailable10k : ranking.rewardPer10kUsdt === null ? "奖励币价格不可用" : `≈ ${formatters.money(ranking.rewardPer10kUsdt)} USDT`;
     const capNotes = [];
     if (ranking.rewardPer1kCapApplied || ranking.rewardPer10kCapApplied) capNotes.push(`已应用单人上限 ${formatters.token(ranking.otherRewardCap)} ${token}`);
     if (ranking.capReachedAtVolume !== null) capNotes.push(`约 ${formatters.money(ranking.capReachedAtVolume)} 新增榜单计入量达到上限`);
-    capNotes.push("奖励按新增量加入后段分母估算，未计个人已有交易量");
+    capNotes.push(ranking.distribution === "equal"
+      ? "按新增一名后段参与者均分估算，增加交易量不提高均分份额"
+      : "奖励按新增量加入后段分母估算，未计个人已有交易量");
+    capNotes.push("假设其他人交易量不变，仅适用于仍处于后段的场景");
 
     const roi = $("netProfitPer10k");
-    if (market?.markets?.length && ranking.rewardPer10kUsdt !== null) {
-      const best = [...market.markets].sort((a, b) => a.totalCostPer10k - b.totalCostPer10k)[0];
-      const net = ranking.rewardPer10kUsdt - best.totalCostPer10k;
-      const ratio = best.totalCostPer10k > 0 ? net / best.totalCostPer10k * 100 : null;
+    const result = calculateRoi();
+    if (result) {
+      const { best, net, ratio } = result;
       roi.textContent = `${net >= 0 ? "+" : "-"}$${Math.abs(net).toFixed(2)}${ratio === null ? "" : ` (${ratio >= 0 ? "+" : ""}${ratio.toFixed(1)}%)`}`;
       roi.style.color = net >= 0 ? "var(--color-green)" : "var(--color-red)";
       const marketScopeNote = market.status === "partial" ? "部分币对盘口不可用，仅比较当前可用币对" : "";
       $("roiFormulaNote").textContent = [`基于 ${best.pair} 成本 $${best.totalCostPer10k.toFixed(2)} / 万U榜单计入量`, marketScopeNote, ...capNotes].filter(Boolean).join(" · ");
     } else {
       roi.textContent = "—";
-      $("roiFormulaNote").textContent = ["行情或奖励价格不可用，未计算 ROI", ...capNotes].join(" · ");
+      $("roiFormulaNote").textContent = [ranking.rewardPer10k === null ? unavailable10k : "行情或奖励价格不可用，未计算 ROI", ...capNotes].join(" · ");
     }
   }
 
@@ -457,12 +505,12 @@
     }
     const tierCards = tiers.map(tier => `<article class="tier-card">
       <p>${escapeHtml(tier.name)}</p>
-      <strong>${Number.isFinite(Number(tier.thresholdVolumeUsd)) ? formatters.money(tier.thresholdVolumeUsd, 0) : "等待排行榜"}</strong>
+      <strong>${hasNumber(tier.thresholdVolumeUsd) ? formatters.money(tier.thresholdVolumeUsd, 0) : "等待排行榜"}</strong>
       <div class="tier-reward"><span>单人奖励</span><b>${formatters.token(tier.rewardPerUser)} ${escapeHtml(tier.rewardToken)}</b></div>
       <small>${tier.rewardUsdt !== null && tier.rewardUsdt !== undefined ? `≈ ${formatters.money(tier.rewardUsdt)} USDT` : "奖励估值不可用"}</small>
     </article>`);
     const bonusCards = bonusRewards.map(item => {
-      const price = item.rewardToken === ranking?.otherRewardToken ? ranking?.rewardTokenPrice : null;
+      const price = rewardPriceFor(item.rewardToken);
       return `<article class="tier-card bonus-tier">
         <p>${escapeHtml(item.name)}</p>
         <strong>${formatters.token(item.totalReward)} ${escapeHtml(item.rewardToken)}</strong>
@@ -474,16 +522,22 @@
   }
 
   function sparkline(values, color) {
-    const numbers = values.map(Number).filter(Number.isFinite);
+    const numbers = values.filter(hasNumber).map(Number);
     if (numbers.length < 2) return '<span class="trend-empty">需要至少两次成功快照</span>';
     const width = 260, height = 64, padding = 4;
     const min = Math.min(...numbers), max = Math.max(...numbers), range = max - min || 1;
-    const points = numbers.map((value, index) => {
-      const x = padding + index * (width - padding * 2) / (numbers.length - 1);
-      const y = height - padding - (value - min) / range * (height - padding * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    let connected = false;
+    const points = [];
+    const path = values.map((value, index) => {
+      if (!hasNumber(value)) { connected = false; return ""; }
+      const x = (padding + index * (width - padding * 2) / (values.length - 1)).toFixed(1);
+      const y = (height - padding - (Number(value) - min) / range * (height - padding * 2)).toFixed(1);
+      const command = `${connected ? "L" : "M"}${x},${y}`;
+      connected = true;
+      points.push(`<circle cx="${x}" cy="${y}" r="2" fill="${color}"/>`);
+      return command;
     }).join(" ");
-    return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`;
+    return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img"><path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>${points.join("")}</svg>`;
   }
 
   function renderHistory() {
@@ -496,7 +550,7 @@
     const latest = entries[entries.length - 1];
     const cards = [
       { title: "赛区总交易量", values: entries.map(item => item.eligibleTradingVolume), latest: formatters.compact(latest.eligibleTradingVolume), color: "#10b981" },
-      { title: `第 ${state.rankingData?.cutoffRank || 1000} 名门槛`, values: entries.map(item => item.cutoff1000Volume), latest: formatters.money(latest.cutoff1000Volume), color: "#3b82f6" },
+      { title: `第 ${state.rankingData?.cutoffRank ?? 1000} 名门槛`, values: entries.map(item => item.cutoff1000Volume), latest: formatters.money(latest.cutoff1000Volume), color: "#3b82f6" },
       { title: "后段总交易量", values: entries.map(item => item.otherEligibleTradingVolume), latest: formatters.compact(latest.otherEligibleTradingVolume), color: "#f59e0b" }
     ];
     grid.innerHTML = cards.map(card => `<article class="trend-card"><span>${escapeHtml(card.title)}</span><strong>${card.latest}</strong>${sparkline(card.values, card.color)}<small>${entries.length} 次成功快照</small></article>`).join("");
@@ -652,11 +706,29 @@
       [`第${cutoff}名门槛(USD)`, ranking.cutoff1000Volume ?? "N/A"], ["后段奖池", `${ranking.otherRewardPool} ${ranking.otherRewardToken}`],
       ["单人奖励上限", ranking.otherRewardCap ?? "无"], ["每1000U榜单计入量预计奖励", `${ranking.rewardPer1k ?? "N/A"} ${ranking.otherRewardToken}`],
       ["每10000U榜单计入量预计奖励", `${ranking.rewardPer10k ?? "N/A"} ${ranking.otherRewardToken}`], [""],
+      ["每1000U估算状态", rewardStatusText(ranking.rewardPer1kStatus || ranking.rewardEstimateStatus)],
+      ["每10000U估算状态", rewardStatusText(ranking.rewardPer10kStatus || ranking.rewardEstimateStatus)],
+      ["后段分配方式", ranking.distribution === "equal" ? "按人数均分" : ranking.distribution === "proportional" ? "按交易量比例" : "待核对"],
+      ["估算说明", $("roiFormulaNote").textContent],
+      ["基础费率", market?.feeRate ?? state.feeRate], ["返佣比例", market?.rebateRate ?? state.rebateRate],
+      ["奖励币价格(USDT)", ranking.rewardTokenPrice ?? "N/A"],
+      ["每1000U奖励估值(USDT)", ranking.rewardPer1kUsdt ?? "N/A"],
+      ["每10000U奖励估值(USDT)", ranking.rewardPer10kUsdt ?? "N/A"],
+      ["行情时间", market?.updatedAt || "N/A"], ["总奖池", campaign.rewardPool], [""],
       ["参赛币对成本", "计入倍数", "买一", "卖一", "价差率%", "每千U榜单计入量手续费", "每千U榜单计入量价差成本", "每千U榜单计入量总成本", "每万U榜单计入量总成本"]
     ];
     for (const pair of market?.markets || []) rows.push([pair.pair, pair.volumeMultiplier || 1, pair.bidPrice, pair.askPrice, pair.spreadPercent, pair.feeCostPer1000, pair.spreadLossPer1000, pair.totalCostPer1000, pair.totalCostPer10k]);
     rows.push([""], ["阶梯奖励", "当前门槛", "单人奖励", "USDT估值"]);
     for (const tier of ranking.tiers || []) rows.push([tier.name, tier.thresholdVolumeUsd ?? "N/A", `${tier.rewardPerUser} ${tier.rewardToken}`, tier.rewardUsdt ?? "N/A"]);
+    rows.push([""], ["独立分轮奖池", "轮数", "奖池", "USDT估值"]);
+    for (const bonus of campaign.bonusRewards || []) {
+      const price = rewardPriceFor(bonus.rewardToken);
+      rows.push([bonus.name, bonus.roundCount, `${bonus.totalReward} ${bonus.rewardToken}`, price === null ? "N/A" : bonus.totalReward * price]);
+    }
+    const roi = calculateRoi();
+    rows.push([""], ["万U最优币对", roi?.best.pair ?? "N/A"],
+      ["万U净收益(USDT)", roi ? roi.net.toFixed(2) : "N/A"],
+      ["净收益/成本(%)", roi?.ratio === null || !roi ? "N/A" : roi.ratio.toFixed(1)]);
     const csv = "\ufeff" + rows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { makeDataDir, sampleSnapshot } = require("./helpers");
+const { makeDataDir, sampleSnapshot, sampleCampaign } = require("./helpers");
 
 process.env.EVENTLENS_DATA_DIR = makeDataDir();
 const binanceApi = require("../lib/binance-api");
@@ -51,6 +51,23 @@ test("健康检查和安全响应头可用且不开放通配 CORS", async () => 
   assert.equal(response.headers.get("access-control-allow-origin"), null);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
+});
+
+test("活动按结束时间排序：进行中升序、历史降序，未知日期置后且同时间保持稳定", async () => {
+  const saved = await storage.getCampaigns();
+  const entries = [
+    ["unknown", null], ["late", "2099-10-01T00:00:00Z"],
+    ["old", "2020-01-01T00:00:00Z"], ["early", "2099-09-01T00:00:00Z"],
+    ["recent", "2021-01-01T00:00:00Z"], ["tie", "2099-09-01T00:00:00Z"],
+    ["invalid", "invalid"]
+  ];
+  try {
+    await storage.saveCampaigns(entries.map(([id, endTime]) => sampleCampaign({ id, endTime })));
+    const { data } = await json("/api/campaigns");
+    assert.deepEqual(data.groups.active.map(c => c.id), ["early", "tie", "late", "unknown", "invalid"]);
+    assert.deepEqual(data.groups.history.map(c => c.id), ["recent", "old"]);
+    assert.deepEqual((await storage.getCampaigns()).map(c => c.id), entries.map(([id]) => id));
+  } finally { await storage.saveCampaigns(saved); }
 });
 
 test("路径穿越不能读取 server.js", async () => {
@@ -114,7 +131,7 @@ test("任意 URL 不能触发本机浏览器访问", async () => {
     body: JSON.stringify({ url: "https://127.0.0.1/internal" })
   });
   assert.equal(response.status, 400);
-  assert.match(data.error, /币安官方域名/);
+  assert.match(data.error, /公网域名/);
 });
 
 test("多赛道联赛公告代码不能在缺少具体子赛道时直接落库", async () => {

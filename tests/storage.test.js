@@ -75,6 +75,8 @@ test("缺失数值保持 null，不会被 Number(null) 误转为 0", () => {
   const normalized = storage.normalizeCampaign(sampleCampaign({ rewardPoolAmount: null, otherReward: { pool: 80, token: "BNB", capPerUser: null, cutoffRank: 3 } }));
   assert.equal(normalized.rewardPoolAmount, null);
   assert.equal(normalized.otherReward.capPerUser, null);
+  assert.equal(normalized.otherReward.distribution, "proportional");
+  assert.equal(storage.normalizeCampaign(sampleCampaign({ otherReward: { pool: 80, token: "BNB", capPerUser: null, cutoffRank: 3, distribution: "equal" } })).otherReward.distribution, "equal");
   const snapshot = storage.normalizeSnapshot(sampleSnapshot({ cutoff1000Volume: null }));
   assert.equal(snapshot.cutoff1000Volume, null);
 });

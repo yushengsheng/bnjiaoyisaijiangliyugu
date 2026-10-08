@@ -14,9 +14,15 @@ const storage = require("../lib/storage");
 const { crawlLeaderboard, toMicros } = require("../lib/crawler");
 const { getCampaignMarketAnalysis } = require("../lib/market");
 
-const campaignId = "spot-altcoin-festival-wave-THE-R1";
+const campaignIds = [
+  "spot-altcoin-festival-wave-HOLO-R1",
+  "spot-altcoin-festival-wave-THE-R1",
+  "202609tradersleague4-Spot-Carnival-Waves-Round1"
+];
 
-test("真实币安 THE 盘口可用且买一不高于卖一", { timeout: 30_000 }, async () => {
+for (const campaignId of campaignIds) {
+
+test(`${campaignId} 真实盘口可用且买一不高于卖一`, { timeout: 30_000 }, async () => {
   const result = await getCampaignMarketAnalysis(campaignId, { feeRate: 0.00075, rebateRate: 0.485 });
   assert.ok(result.markets.length >= 1);
   for (const market of result.markets) {
@@ -26,7 +32,7 @@ test("真实币安 THE 盘口可用且买一不高于卖一", { timeout: 30_000 
   }
 });
 
-test("真实 THE 主榜完成全部分页与精确拆分", { timeout: 240_000 }, async t => {
+test(`${campaignId} 真实主榜完成全部分页与精确拆分`, { timeout: 240_000 }, async t => {
   const campaign = await storage.getCampaignById(campaignId);
   const snapshot = await crawlLeaderboard(campaign, (percent, text) => t.diagnostic(`${percent}% ${text}`));
   assert.equal(snapshot.integrity.complete, true);
@@ -45,3 +51,4 @@ test("真实 THE 主榜完成全部分页与精确拆分", { timeout: 240_000 },
     collectedAt: snapshot.collectedAt
   }));
 });
+}

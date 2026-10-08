@@ -11,6 +11,11 @@ const market = require("./lib/market");
 const ranking = require("./lib/ranking");
 const { CrawlerScheduler, crawlLeaderboard, campaignPatchFromSnapshot } = require("./lib/crawler");
 const APP_VERSION = require("./package.json").version;
+const { runtimeIdentity, createPageLifetime } = require("./lib/desktop");
+const identity = runtimeIdentity();
+const desktopMode = process.env.EVENTLENS_DESKTOP === "1";
+let pageLifetime;
+let requestShutdown;
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "127.0.0.1";
@@ -32,6 +37,7 @@ const MIME_TYPES = {
 };
 
 const MUTATION_PATHS = new Set([
+  "/api/desktop/stop",
   "/api/campaigns/add-by-url",
   "/api/campaigns/delete",
   "/api/announcements/parse",
@@ -59,6 +65,14 @@ function sendJson(res, statusCode, data) {
     "Pragma": "no-cache"
   });
   res.end(json);
+}
+
+function compareCampaignEnd(a, b, direction) {
+  const left = Date.parse(a.endTime);
+  const right = Date.parse(b.endTime);
+  if (!Number.isFinite(left)) return Number.isFinite(right) ? 1 : 0;
+  if (!Number.isFinite(right)) return -1;
+  return direction * (left - right);
 }
 
 function sendError(res, statusCode, message, detail = null) {
@@ -183,11 +197,24 @@ function createServer() {
 
     try {
       if (pathname === "/api/health" && req.method === "GET") {
-        return sendJson(res, 200, { ok: true, app: "eventlens-local", version: APP_VERSION });
+        return sendJson(res, 200, { ok: true, app: "eventlens-local", version: APP_VERSION, ...identity, desktop: desktopMode });
       }
 
       if (pathname === "/api/session" && req.method === "GET") {
-        return sendJson(res, 200, { token: sessionToken });
+        return sendJson(res, 200, { token: sessionToken, desktop: desktopMode });
+      }
+
+      if (pathname === "/api/desktop/page" && req.method === "GET") {
+        req.headers["x-eventlens-token"] = query.token;
+        if (!requireMutationAccess(req, res)) return;
+        if (!pageLifetime) { res.writeHead(204, securityHeaders()); return res.end(); }
+        return pageLifetime.attach(req, res);
+      }
+      if (pathname === "/api/desktop/stop" && req.method === "POST") {
+        if (!requestShutdown) return sendError(res, 409, "当前服务由测试程序管理");
+        sendJson(res, 200, { ok: true });
+        setImmediate(requestShutdown);
+        return;
       }
 
       if (pathname === "/api/campaigns/add-by-url" && req.method === "POST") {
@@ -238,8 +265,10 @@ function createServer() {
         return sendJson(res, 200, {
           source: "local-file",
           groups: {
-            active: all.filter(c => c.status === "active" || c.status === "upcoming" || c.status === "needs-review"),
+            active: all.filter(c => c.status === "active" || c.status === "upcoming" || c.status === "needs-review")
+              .sort((a, b) => compareCampaignEnd(a, b, 1)),
             history: all.filter(c => c.status === "history")
+              .sort((a, b) => compareCampaignEnd(a, b, -1))
           }
         });
       }
@@ -388,10 +417,14 @@ function createServer() {
         const stat = await fs.stat(finalPath);
         if (stat.isDirectory()) finalPath = path.join(finalPath, "index.html");
         const contentType = MIME_TYPES[path.extname(finalPath).toLowerCase()] || "application/octet-stream";
-        const content = await fs.readFile(finalPath);
+        let content = await fs.readFile(finalPath);
+        if (contentType.startsWith("text/html")) {
+          content = content.toString().replace(/(href|src)="(styles\.css|app\.js|lifecycle\.js)"/g,
+            (_, attr, file) => `${attr}="${file}?v=${identity.buildId}"`);
+        }
         res.writeHead(200, {
           ...securityHeaders(contentType),
-          "Cache-Control": contentType.startsWith("text/html") ? "no-cache" : "public, max-age=3600"
+          "Cache-Control": "no-store, max-age=0"
         });
         if (req.method === "HEAD") return res.end();
         return res.end(content);
@@ -413,6 +446,20 @@ server.scheduler = scheduler;
 server.sessionToken = sessionToken;
 
 if (require.main === module) {
+  let shuttingDown = false;
+  requestShutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    scheduler.stop();
+    pageLifetime?.dispose();
+    server.close();
+    server.closeAllConnections();
+    const deadline = setTimeout(() => process.exit(0), 5000);
+    deadline.unref();
+    await storage.waitForWrites();
+    process.exit(0);
+  };
+  if (desktopMode) pageLifetime = createPageLifetime(requestShutdown);
   (async () => {
     const settings = await storage.getSchedulerSettings();
     if (settings.autoUpdateEnabled) scheduler.start();
@@ -429,12 +476,8 @@ if (require.main === module) {
     process.exit(1);
   });
 
-  const shutdown = () => {
-    scheduler.stop();
-    server.close(() => process.exit(0));
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", requestShutdown);
+  process.on("SIGTERM", requestShutdown);
 }
 
 module.exports = server;

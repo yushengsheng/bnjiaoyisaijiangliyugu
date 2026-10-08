@@ -37,18 +37,20 @@ test("THE 在线审计基准的总量拆分保持微美元精度", () => {
   assert.equal(snapshot.eligibleUserCount, snapshot.topRankUserCount + snapshot.otherEligibleUserCount);
 });
 
-test("THE 每千 U 和每万 U 奖励均应用 0.05 BNB 上限", async () => {
+test("THE 千 U 和万 U 已超过排名门槛，不再输出后段奖励", async () => {
   binanceApi.getTickerPrice = async () => ({ price: 734.61 });
   const result = await getCampaignRanking("the-audit");
-  assert.equal(result.rewardPer1k, 0.05);
-  assert.equal(result.rewardPer10k, 0.05);
-  assert.equal(result.rewardPer10kUsdt, 36.73);
+  assert.equal(result.rewardPer1k, null);
+  assert.equal(result.rewardPer10k, null);
+  assert.equal(result.rewardPer1kStatus, "ranked-volume");
+  assert.equal(result.rewardPer10kStatus, "ranked-volume");
+  assert.equal(result.rewardPer10kUsdt, null);
   assert.equal(result.capReachedAtVolume, 679.95);
 });
 
 test("奖励美元估值使用常规金融四舍五入", () => {
   const holoCampaign = { ...campaign, otherReward: { pool: 80, token: "BNB", capPerUser: 0.05, cutoffRank: 1000 } };
-  const holoSnapshot = { ...snapshot, otherEligibleTradingVolume: 2719268.97837 };
+  const holoSnapshot = { ...snapshot, otherEligibleTradingVolume: 2719268.97837, cutoff1000Volume: 21537.37146 };
   const result = computeRankingMetrics(holoCampaign, holoSnapshot, 735.5);
   assert.equal(result.rewardPer10k, 0.05);
   assert.equal(result.rewardPer10kUsdt, 36.78);

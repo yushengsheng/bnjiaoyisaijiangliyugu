@@ -45,7 +45,7 @@
         <div class="import-controls">
           <div class="input-with-icon">
             <span class="input-icon">🔗</span>
-            <input id="announcementInput" type="url" spellcheck="false" placeholder="直接粘贴币安排行榜链接，例如 https://www.binance.com/zh-CN/activity/trading-competition/spot-altcoin-festival-wave-THE-R1">
+            <input id="announcementInput" type="url" spellcheck="false" placeholder="粘贴币安交易赛排行榜链接，支持新镜像及自定义域名">
           </div>
           <button id="parseAnnouncementBtn" class="btn-primary" title="只需提供排行榜链接，自动提取币种、反查奖池规则并抓取数据">
             <span class="btn-icon">＋</span> 添加监控
@@ -124,7 +124,7 @@
             </label>
             <label>
               <span>返佣比例:</span>
-              <input id="inputRebateRate" type="number" min="0" max="1" step="0.01" value="0.485" title="输入 0 到 1，例如 48.5% 填写 0.485">
+              <input id="inputRebateRate" type="number" min="0" max="1" step="0.001" value="0.485" title="输入 0 到 1，例如 48.5% 填写 0.485">
             </label>
             <div class="calc-actual-rate">
               实际费率: <b id="displayActualFeeRate">0.0386%</b>
@@ -187,6 +187,11 @@
             <span id="statTailTitle" class="box-title">第 1,001 名起按比例瓜分</span>
             <strong id="statTailUsers">— 人</strong>
             <small id="statTailVolume">$—</small>
+            <div class="tail-cap">
+              <span>单人最高奖励上限</span>
+              <b id="statTailCap">—</b>
+              <small id="statTailCapUsdt"></small>
+            </div>
           </div>
         </div>
 
@@ -258,5 +263,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="lifecycle.js"></script>
 </body>
 </html>

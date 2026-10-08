@@ -10,7 +10,9 @@ ARCHIVE="$DIST/$NAME.zip"
 
 rm -rf "$STAGE" "$ARCHIVE"
 rm -f "$DIST"/EventLens-Local-v*.zip
-mkdir -p "$STAGE/lib" "$STAGE/public" "$STAGE/data"
+mkdir -p "$STAGE/lib" "$STAGE/public" "$STAGE/data" "$STAGE/scripts"
+cp "$ROOT/scripts/launch-desktop.js" "$STAGE/scripts/"
+cp -R "$ROOT/双击打开.app" "$STAGE/双击打开.app"
 
 for file in server.js package.json README.md PRIVACY.md CHANGELOG.md LICENSE start.sh start.bat Open-EventLens.command 双击打开.command; do
   cp "$ROOT/$file" "$STAGE/$file"
@@ -27,8 +29,9 @@ Requirements:
 - Brave Browser or Google Chrome (required for leaderboard updates)
 
 macOS:
-1. Double-click Open-EventLens.command
+1. Double-click 双击打开.app (no Terminal window)
 2. If macOS blocks it, right-click and choose Open
+3. Closing the last EventLens page stops the service after about 10 seconds
 
 Windows:
 1. Double-click start.bat

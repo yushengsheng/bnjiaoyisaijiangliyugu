@@ -4,6 +4,8 @@ const {
   parseAnnouncement,
   parseRewardTable,
   countTimedBonusRounds,
+  extractPairMultipliers,
+  extractPairMultipliersFromTables,
   selectRewardStructure,
   selectSubTrackPeriodText,
   parseAnnouncementPeriod,
@@ -11,8 +13,111 @@ const {
   extractCampaignMetaFromUrl,
   normalizeLeaderboardUrl,
   validateLeaderboardUrl,
+  validateLeaderboardHost,
   createCampaignFromLeaderboardUrl
 } = require("../lib/parser");
+const leagueArticle = require("./fixtures/tradersleague-multi-track.json");
+
+test("综合联赛公告按现货章节匹配两期规则，排除 bStocks 和 TradFi 奖池", () => {
+  for (const [round, start] of [[1, "2026-09-09T10:00:00.000Z"], [2, "2026-09-23T10:00:00.000Z"]]) {
+    const campaign = parseAnnouncement(leagueArticle, `Spot-Carnival-Waves-Round${round}`);
+    assert.equal(campaign.needsReview, false, JSON.stringify(campaign.reviewReasons));
+    assert.equal(campaign.rewardPoolAmount, 600);
+    assert.equal(campaign.startTime, start);
+    assert.equal(campaign.minVolumeUsd, 500);
+    assert.equal(campaign.otherReward.pool, 120);
+    assert.equal(campaign.otherReward.capPerUser, 0.08);
+    assert.equal(campaign.otherReward.cutoffRank, 1000);
+    assert.equal(campaign.otherReward.distribution, "proportional");
+    assert.equal(campaign.bonusRewards[0].totalReward, 120);
+    assert.equal(campaign.tiers.at(-1).rankTo, 1000);
+  }
+});
+
+test("指定现货章节内部的多个主奖池仍须核对", () => {
+  const source = structuredClone(leagueArticle);
+  const nextTrack = source.body.child.findIndex(node => node.tag === "h2" && /bStocks/.test(node.child[0].text));
+  const mainTable = source.body.child.find(node => node.tag === "table" && node.child.some(row => /按交易量占比瓜分120/.test(row.child[1]?.child[0]?.text || "")));
+  source.body.child.splice(nextTrack, 0, structuredClone(mainTable));
+  const campaign = parseAnnouncement(source, "Spot-Carnival-Waves-Round2");
+  assert.equal(campaign.needsReview, true);
+  assert.ok(campaign.reviewReasons.some(reason => /多个主奖池/.test(reason)));
+});
+
+test("章节缺少同活动现货链接或请求其他赛道时不能消除多主奖池歧义", () => {
+  const source = structuredClone(leagueArticle);
+  const replaceLinks = node => {
+    if (node.tag === "a" && /Spot-Carnival/.test(node.attr.href)) node.attr.href = node.attr.href.replace("202609tradersleague4", "other-league");
+    node.child?.forEach(replaceLinks);
+  };
+  replaceLinks(source.body);
+  for (const [article, track] of [[source, "Spot-Carnival-Waves-Round2"], [leagueArticle, "bStock-Solo-Competition-Round2"], [leagueArticle, ""]]) {
+    assert.ok(parseAnnouncement(article, track).reviewReasons.some(reason => /多个主奖池/.test(reason)));
+  }
+});
+
+test("新镜像现货 Round2 通过公告匹配后无需人工解除奖励估算", async () => {
+  const api = require("../lib/binance-api");
+  const originals = [api.getAnnouncementList, api.getAnnouncementDetail];
+  api.getAnnouncementList = async () => [{ code: leagueArticle.code, title: leagueArticle.title }];
+  api.getAnnouncementDetail = async () => leagueArticle;
+  try {
+    const url = "https://www.usnbweb.red/activity/trading-competition/202609tradersleague4/Spot-Carnival-Waves-Round2";
+    const campaign = await createCampaignFromLeaderboardUrl(`${url}?utm_source=anns&_dp=test`);
+    assert.equal(campaign.landingUrl, url);
+    assert.equal(campaign.needsReview, false);
+    assert.equal(campaign.endTime, "2026-10-07T09:59:00.000Z");
+    assert.equal(campaign.otherReward.pool, 120);
+  } finally { [api.getAnnouncementList, api.getAnnouncementDetail] = originals; }
+});
+
+test("活动页币对表分别识别 1、1.2 和 1.5 倍，不把奖励表当倍率表", () => {
+  const table = [["符合条件的交易对", "早鸟倍数"], ["BTC/USDT, ETH/USDT", "1x"], ["A/USDT, ALT/USDT", "1.2 倍"], ["HUMA/USDT, CATI/USDT", "1.5 倍"]];
+  assert.deepEqual(extractPairMultipliersFromTables([table, [["排名", "奖励"], ["第1名", "18 BNB"]]]), {
+    "BTC/USDT": 1, "ETH/USDT": 1, "A/USDT": 1.2, "ALT/USDT": 1.2, "HUMA/USDT": 1.5, "CATI/USDT": 1.5
+  });
+  for (const invalid of ["未知", "0x", "20x"]) {
+    assert.deepEqual(extractPairMultipliersFromTables([[...table, ["LINEA/USDT", invalid]]]), {});
+  }
+  assert.deepEqual(extractPairMultipliersFromTables([table, [["Eligible trading pairs", "Multiplier"], ["A/USDT", "1.5x"]]]), {});
+});
+
+test("后段均分、按比例和未知分配方式明确区分", () => {
+  for (const [text, distribution] of [
+    ["An equal split of 80 BNB, capped at 0.05 BNB", "equal"],
+    ["平均分配80 BNB", "equal"],
+    ["A proportional share of 80 BNB, capped at 0.05 BNB", "proportional"],
+    ["按交易量占比瓜分80 BNB", "proportional"],
+    ["80 BNB, see special rules", "unknown"]
+  ]) {
+    const parsed = parseRewardTable([["1st - 1000th Places", "0.07 BNB"], ["All Remaining Eligible Participants", text]]);
+    assert.equal(parsed.otherReward.distribution, distribution);
+    assert.equal(parsed.otherReward.pool, 80);
+    assert.equal(parsed.otherReward.cutoffRank, 1000);
+  }
+});
+
+test("不限定联赛名称的中英倍数解析，不扩散到后续普通币对", () => {
+  assert.deepEqual(extractPairMultipliers("交易对：HOLO/USDT 交易量按 1.2 倍计入。普通交易对：HOLO/USDC。"), { "HOLO/USDT": 1.2 });
+  assert.deepEqual(extractPairMultipliers("Trading volume on A/USDT and ALT/USDT will be counted at 1.2x. Other pairs: BTC/USDT."), { "A/USDT": 1.2, "ALT/USDT": 1.2 });
+  const source = article();
+  const body = JSON.parse(source.body);
+  body.child.push({ node: "text", text: "交易对：THE/USDT 交易量按 1.2 倍计入。" });
+  assert.deepEqual(parseAnnouncement({ ...source, body }).pairMultipliers, { "THE/USDT": 1.2 });
+});
+
+test("多个主奖池或未知分配方式标记待核对，不能靠评分当作已验证", () => {
+  const source = article();
+  const body = JSON.parse(source.body);
+  const secondMain = structuredClone(body.child.find(node => node.tag === "table"));
+  body.child.push(secondMain);
+  assert.equal(parseAnnouncement({ ...source, body }).needsReview, true);
+  assert.ok(parseAnnouncement({ ...source, body }).reviewReasons.some(reason => /多个主奖池/.test(reason)));
+  const unknown = JSON.parse(source.body);
+  const table = unknown.child.find(node => node.tag === "table");
+  table.child.at(-1).child[1].child[0].text = "80 BNB, see special rules";
+  assert.ok(parseAnnouncement({ ...source, body: unknown }).reviewReasons.includes("未识别后段分配方式"));
+});
 
 function article({ title = "THE 现货交易锦标赛：交易瓜分高达 400 BNB 奖池", includeRules = true } = {}) {
   const children = [
@@ -200,8 +305,96 @@ test("公告反查必须由详情中的精确活动 slug 确认，不能只看�
   }
 });
 
-test("仅允许已知官方排行榜主机和 HTTPS", () => {
+test("自定义活动链接保留 HTTPS、公网主机和活动路径限制", () => {
   assert.throws(() => validateLeaderboardUrl("http://www.icnguxncf.com/activity/trading-competition/x"), /HTTPS/);
-  assert.throws(() => validateLeaderboardUrl("https://127.0.0.1/activity/trading-competition/x"), /币安官方域名/);
-  assert.throws(() => validateLeaderboardUrl("https://evil.example/activity/trading-competition/x"), /币安官方域名/);
+  for (const host of ["127.0.0.1", "2130706433", "[::1]", "localhost", "a.local", "a.internal", "a.example"]) {
+    assert.throws(() => validateLeaderboardUrl(`https://${host}/activity/trading-competition/x`), /公网域名/);
+  }
+  assert.throws(() => validateLeaderboardUrl("https://user:pass@www.binance.com/activity/trading-competition/x"), /用户名/);
+  assert.throws(() => validateLeaderboardUrl("https://www.binance.com:8443/activity/trading-competition/x"), /端口/);
+  assert.throws(() => validateLeaderboardUrl("https://www.binance.com/unrelated/activity/trading-competition/x"), /活动页面/);
+  assert.throws(() => validateLeaderboardUrl("https://www.binance.com/activity/trading-competition/x/round/extra"), /活动页面/);
+});
+
+test("新镜像和未来自定义域名保留输入主机，活动ID跨域一致", () => {
+  const hosts = ["www.cagxfucoftt.com", "www.future-mirror.com", "www.binance.com", "app.binance.com", "www.icnguxncf.com"];
+  for (const host of hosts) {
+    const input = `https://${host}/activity/trading-competition/spot-altcoin-festival-wave-REZ-R1?utm_source=test#rank`;
+    const normalized = normalizeLeaderboardUrl(input);
+    assert.equal(normalized, `https://${host}/activity/trading-competition/spot-altcoin-festival-wave-REZ-R1/Main-Reward`);
+    assert.equal(extractCampaignMetaFromUrl(normalized).campaignId, "spot-altcoin-festival-wave-REZ-R1");
+  }
+  const round = "https://www.cagxfucoftt.com/zh-CN/activity/trading-competition/202609tradersleague4/Spot-Carnival-Waves-Round2";
+  assert.equal(normalizeLeaderboardUrl(round), round);
+  assert.equal(normalizeLeaderboardUrl(`${round}/Main-Reward`), round);
+  assert.equal(extractCampaignMetaFromUrl(round).subId, "Spot-Carnival-Waves-Round2");
+});
+
+test("公网域名解析到内网时在启动浏览器前拒绝，兼容 IPv4/IPv6", async () => {
+  const input = "https://www.cagxfucoftt.com/activity/trading-competition/spot-altcoin-festival-wave-REZ-R1/Main-Reward";
+  for (const address of ["127.0.0.1", "10.1.2.3", "172.16.2.3", "192.168.1.1", "169.254.169.254", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1"]) {
+    await assert.rejects(validateLeaderboardHost(input, async () => [{ address }]), /内网地址/);
+  }
+  const resolved = await validateLeaderboardHost(input, async () => [{ address: "8.8.8.8" }, { address: "2606:4700::1111" }]);
+  assert.equal(resolved.hostname, "www.cagxfucoftt.com");
+  await assert.rejects(validateLeaderboardHost(input, async () => [{ address: "8.8.8.8" }, { address: "10.1.2.3" }]), /内网地址/);
+});
+
+test("新域名录入仍从官方公告匹配规则，保留输入URL且换域不重复活动", async () => {
+  const api = require("../lib/binance-api");
+  const originalList = api.getAnnouncementList;
+  const originalDetail = api.getAnnouncementDetail;
+  api.getAnnouncementList = async () => [{ code: "test-code", title: "THE 交易锦标赛" }];
+  api.getAnnouncementDetail = async () => article();
+  try {
+    const custom = await createCampaignFromLeaderboardUrl("https://www.cagxfucoftt.com/activity/trading-competition/spot-altcoin-festival-wave-THE-R1/Main-Reward");
+    const standard = await createCampaignFromLeaderboardUrl("https://www.binance.com/activity/trading-competition/spot-altcoin-festival-wave-THE-R1/Main-Reward");
+    assert.equal(custom.id, standard.id);
+    assert.equal(new URL(custom.landingUrl).hostname, "www.cagxfucoftt.com");
+    assert.deepEqual(custom.otherReward, standard.otherReward);
+    assert.equal(custom.needsReview, false);
+  } finally { api.getAnnouncementList = originalList; api.getAnnouncementDetail = originalDetail; }
+});
+
+test("轮次 R8 不作为币种，兼容旧 ENSO1 活动命名", () => {
+  const prefix = "https://www.binance.com/activity/trading-competition/";
+  assert.equal(extractCampaignMetaFromUrl(`${prefix}spot-altcoin-trading-festival-wave-R8`).token, "");
+  assert.equal(extractCampaignMetaFromUrl(`${prefix}spot-altcoin-festival-wave-ENSO1`).token, "ENSO");
+});
+
+test("短页仍继续反查旧公告，跳过相似 slug 和坏详情，第二页第13条也能命中", async () => {
+  const api = require("../lib/binance-api");
+  const originals = [api.getAnnouncementList, api.getAnnouncementDetail];
+  const pages = [];
+  const slug = "spot-altcoin-trading-festival-wave-R8";
+  api.getAnnouncementList = async (_, page) => {
+    pages.push(page);
+    return page === 1 ? [{ code: "broken", title: "交易锦标赛" }] :
+      Array.from({ length: 13 }, (_, i) => ({ code: String(i), title: "现货交易锦标赛" }));
+  };
+  api.getAnnouncementDetail = async code => {
+    if (code === "broken") throw new Error("临时详情失败");
+    const fixture = article();
+    return { ...fixture, code, body: fixture.body.replaceAll("spot-altcoin-festival-wave-THE-R1", code === "12" ? slug : `${slug}-extra`) };
+  };
+  try {
+    const campaign = await createCampaignFromLeaderboardUrl(`https://www.cagxfucoftt.com/activity/trading-competition/${slug}`);
+    assert.deepEqual(pages, [1, 2]);
+    assert.equal(campaign.id, slug);
+    assert.equal(campaign.needsReview, false);
+    assert.equal(campaign.token, "THE");
+  } finally { [api.getAnnouncementList, api.getAnnouncementDetail] = originals; }
+});
+
+test("公告重复页及时停止，未找到仍保持待核对", async () => {
+  const api = require("../lib/binance-api");
+  const originals = [api.getAnnouncementList, api.getAnnouncementDetail];
+  let pages = 0;
+  api.getAnnouncementList = async () => { pages++; return [{ code: "same", title: "交易锦标赛" }]; };
+  api.getAnnouncementDetail = async () => article();
+  try {
+    const campaign = await createCampaignFromLeaderboardUrl("https://www.binance.com/activity/trading-competition/missing");
+    assert.equal(pages, 2);
+    assert.equal(campaign.needsReview, true);
+  } finally { [api.getAnnouncementList, api.getAnnouncementDetail] = originals; }
 });

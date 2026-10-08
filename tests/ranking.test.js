@@ -37,10 +37,11 @@ test("快照按活动精确匹配并计算后段封顶奖励", async () => {
   assert.equal(result.topRankUserCount, 3);
   assert.equal(result.otherEligibleTradingVolume, 3000);
   assert.equal(result.rewardPer1k, 0.05);
-  assert.equal(result.rewardPer10k, 0.05);
+  assert.equal(result.rewardPer10k, null);
+  assert.equal(result.rewardPer10kStatus, "ranked-volume");
   assert.equal(result.rewardPer1kCapApplied, true);
   assert.equal(result.capReachedAtVolume, 1.88);
-  assert.equal(result.rewardPer10kUsdt, 30);
+  assert.equal(result.rewardPer10kUsdt, null);
   assert.equal(result.calculationBasis, "added-volume-included");
   assert.equal(result.tiers[0].thresholdVolumeUsd, 5000);
 });
