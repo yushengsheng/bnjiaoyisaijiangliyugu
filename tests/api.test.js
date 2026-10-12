@@ -235,6 +235,9 @@ test("无效 JSON 和过大请求体具有 400/413 语义", async () => {
   const headers = { "Content-Type": "application/json", Origin: base, "X-EventLens-Token": token };
   assert.equal((await json("/api/campaigns/delete", { method: "POST", headers, body: "{" })).response.status, 400);
   assert.equal((await json("/api/campaigns/delete", { method: "POST", headers, body: JSON.stringify({ id: "x", padding: "a".repeat(1_000_100) }) })).response.status, 413);
+  for (const body of ["null", "[]", "1", '"text"']) {
+    assert.equal((await json("/api/campaigns/delete", { method: "POST", headers, body })).response.status, 400);
+  }
 });
 
 test("同源令牌可写成功快照并形成历史", async () => {
@@ -259,6 +262,16 @@ test("无效快照属于 400 客户端错误且不会覆盖成功数据", async 
   assert.equal(response.status, 400);
   const ranking = await json("/api/binance/ranking?campaignId=sample-campaign");
   assert.equal(ranking.data.eligibleTradingVolume, 18000);
+});
+
+test("非法逐名快照返回400并保留上次成功数据", async () => {
+  const { response } = await json("/api/ranking/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: base, "X-EventLens-Token": token },
+    body: JSON.stringify({ campaignId: "sample-campaign", snapshot: sampleSnapshot({ rankEntries: [] }) })
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await json("/api/binance/ranking?campaignId=sample-campaign")).data.eligibleTradingVolume, 18000);
 });
 
 test("行情参数超出边界返回 400", async () => {

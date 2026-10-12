@@ -149,7 +149,9 @@ async function parseBody(req) {
       if (settled) return;
       if (!raw) return finish(resolve, {});
       try {
-        finish(resolve, JSON.parse(raw));
+        const body = JSON.parse(raw);
+        if (!body || Array.isArray(body) || typeof body !== "object") throw new Error("请求体必须是 JSON 对象");
+        finish(resolve, body);
       } catch (_) {
         const error = new Error("无效的 JSON 请求体");
         error.statusCode = 400;
@@ -352,7 +354,7 @@ function createServer() {
           const saved = await storage.saveSnapshot(campaign.id, body.snapshot);
           return sendJson(res, 200, { success: true, snapshot: saved });
         } catch (error) {
-          if (/^排行榜(?:快照|人数|交易量)/.test(error.message)) error.statusCode = 400;
+          if (/^(?:排行榜(?:快照|人数|交易量)|前1000名)/.test(error.message)) error.statusCode = 400;
           throw error;
         }
       }

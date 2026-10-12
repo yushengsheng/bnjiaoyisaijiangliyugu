@@ -100,6 +100,61 @@ test("删除活动同时删除最新快照和历史", async () => {
   assert.deepEqual(await storage.getSnapshotHistory("delete-me"), []);
 });
 
+test("首次启动并发初始化与录入不会写入失败或覆盖新活动", async () => {
+  const file = path.join(dataDir, "campaigns.json");
+  const original = fs.readFileSync(file);
+  fs.unlinkSync(file);
+  try {
+    const results = await Promise.allSettled([
+      ...Array.from({ length: 40 }, () => storage.getCampaigns()),
+      storage.upsertCampaign(sampleCampaign({ id: "first-run-added" }))
+    ]);
+    assert.deepEqual(results.filter(result => result.status === "rejected").map(result => result.reason.message), []);
+    assert.ok(await storage.getCampaignById("first-run-added"));
+    assert.equal(fs.readdirSync(dataDir).some(name => name.endsWith(".tmp")), false);
+  } finally { fs.writeFileSync(file, original); }
+});
+
+test("不支持硬链接的文件系统也能并发初始化数据", async t => {
+  const file = path.join(dataDir, "settings.json");
+  const original = fs.readFileSync(file);
+  fs.unlinkSync(file);
+  t.mock.method(require("node:fs/promises"), "link", async () => { throw Object.assign(new Error("unsupported"), { code: "ENOTSUP" }); });
+  try {
+    const settings = await Promise.all(Array.from({ length: 20 }, () => storage.getSchedulerSettings()));
+    assert.ok(settings.every(value => value.autoUpdateEnabled));
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { autoUpdateEnabled: true });
+    assert.equal(fs.readdirSync(dataDir).some(name => name.endsWith(".tmp")), false);
+  } finally { fs.writeFileSync(file, original); }
+});
+
+test("并发更新活动的不同字段不会丢失，也不会复活已删除活动", async () => {
+  await storage.upsertCampaign(sampleCampaign({ id: "update-race" }));
+  await Promise.all([
+    storage.updateCampaign("update-race", { name: "Updated name" }),
+    storage.updateCampaign("update-race", { resourceId: 987 })
+  ]);
+  const updated = await storage.getCampaignById("update-race");
+  assert.equal(updated.name, "Updated name");
+  assert.equal(updated.resourceId, 987);
+  const results = await Promise.allSettled([
+    storage.deleteCampaign("update-race"),
+    storage.updateCampaign("update-race", { resourceId: 999 }),
+    storage.saveSnapshot("update-race", sampleSnapshot())
+  ]);
+  assert.equal(results[1].value, null);
+  assert.equal(results[2].status, "rejected");
+  assert.match(results[2].reason.message, /未找到活动/);
+  assert.equal(await storage.getCampaignById("update-race"), null);
+  assert.equal(await storage.getSnapshot("update-race"), null);
+  assert.deepEqual(await storage.getSnapshotHistory("update-race"), []);
+});
+
+test("快照人数必须是整数且与完整性元数据一致", () => {
+  assert.throws(() => storage.normalizeSnapshot(sampleSnapshot({ integrity: { complete: true, expectedRecords: 1, actualRecords: 1 } })), /人数|完整性/);
+  assert.throws(() => storage.normalizeSnapshot(sampleSnapshot({ eligibleUserCount: 5.5, otherEligibleUserCount: 2.5 })), /人数|字段无效/);
+});
+
 test("损坏 JSON 会保留备份并停止覆盖", async () => {
   fs.writeFileSync(path.join(dataDir, "campaigns.json"), "{broken");
   await assert.rejects(() => storage.getCampaigns(), /数据文件损坏，已保留备份/);

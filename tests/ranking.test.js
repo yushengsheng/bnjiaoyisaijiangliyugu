@@ -89,3 +89,43 @@ test("历史只记录成功快照并按采集时间排序去重", async () => {
   assert.equal(history[0].eligibleTradingVolume, 16000);
   assert.equal(history[1].eligibleTradingVolume, 17000);
 });
+
+const rankRows = () => [5000, 4000, 3000, 2000, 1000].map((volume, i) => ({ position: i + 1, rank: i + 1, volume }));
+
+test("逐名奖励按所在名次匹配，后段按已存在参与者份额计算而非新增分母", () => {
+  const campaign = sampleCampaign({ otherReward: { pool: 80, token: "BNB", capPerUser: null, cutoffRank: 3 } });
+  const result = computeRankingMetrics(campaign, sampleSnapshot({ rankEntries: rankRows() }), 600);
+  assert.equal(result.rankEntriesStatus, "available");
+  assert.equal(result.rankEntries[0].rewardAmount, 12);
+  assert.equal(result.rankEntries[0].rewardUsdt, 7200);
+  assert.equal(result.rankEntries[1].rewardAmount, 4);
+  assert.equal(result.rankEntries[2].rewardAmount, 4);
+  assert.equal(result.rankEntries[3].rewardAmount, 53.33333333);
+  assert.equal(result.rankEntries[3].rewardUsdtUnrounded, 32000);
+  assert.equal(result.rankEntries[4].rewardAmount, 26.66666667);
+});
+
+test("逐名奖励保留均分精度，行情缺失与并列歧义不产生假利润估值", () => {
+  const campaign = sampleCampaign({ tiers: [{ rankFrom: 1, rankTo: 3, totalTierReward: 1, userCount: 3, rewardToken: "USDC" }] });
+  const rows = rankRows();
+  rows[1] = { ...rows[1], rank: 1, tied: true, rewardAmbiguous: true };
+  const result = computeRankingMetrics(campaign, sampleSnapshot({ rankEntries: rows }), null, { USDC: 1 });
+  assert.equal(result.rankEntries[0].rewardUsdtUnrounded, 1 / 3);
+  assert.equal(result.rankEntries[1].rewardStatus, "rank-tie");
+  assert.equal(result.rankEntries[1].rewardUsdt, null);
+  assert.equal(result.rankEntries[3].rewardUsdt, null);
+  assert.equal(computeRankingMetrics(sampleCampaign({ needsReview: true }), sampleSnapshot({ rankEntries: rankRows() }), 600).rankEntries[0].rewardAmount, null);
+  assert.equal(computeRankingMetrics(sampleCampaign(), sampleSnapshot(), 600).rankEntriesStatus, "needs-refresh");
+});
+
+test("逐名快照校验数量、顺序和汇总，最新数据保留明细而趋势历史不重复存储", async () => {
+  const snapshot = sampleSnapshot({ rankEntries: rankRows() });
+  assert.throws(() => storage.normalizeSnapshot({ ...snapshot, rankEntries: snapshot.rankEntries.slice(0, 4) }), /明细数量/);
+  assert.throws(() => storage.normalizeSnapshot({ ...snapshot, rankEntries: snapshot.rankEntries.map((entry, i) => i === 1 ? { ...entry, volume: 6000 } : entry) }), /明细顺序/);
+  assert.throws(() => storage.normalizeSnapshot({ ...snapshot, rankEntries: snapshot.rankEntries.map((entry, i) => i === 0 ? { ...entry, volume: 5001 } : entry) }), /汇总不一致/);
+  const campaign = sampleCampaign({ id: "rank-entries-storage" });
+  await storage.upsertCampaign(campaign);
+  await storage.saveSnapshot(campaign.id, snapshot);
+  assert.equal((await storage.getSnapshot(campaign.id)).rankEntries.length, 5);
+  assert.equal((await storage.getSnapshotHistory(campaign.id))[0].rankEntries, undefined);
+});

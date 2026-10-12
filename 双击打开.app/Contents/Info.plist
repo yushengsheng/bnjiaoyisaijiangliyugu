@@ -5,6 +5,13 @@
   <key>CFBundleIdentifier</key><string>local.eventlens.launcher</string>
   <key>CFBundleName</key><string>双击打开</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>2.1.2</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSDownloadsFolderUsageDescription</key><string>EventLens 需要读取此项目的程序文件，并保存本地活动和排行榜数据。</string>
+  <key>NSDesktopFolderUsageDescription</key><string>EventLens 需要读取此项目的程序文件，并保存本地活动和排行榜数据。</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>EventLens 需要读取此项目的程序文件，并保存本地活动和排行榜数据。</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>EventLens 需要读取此项目的程序文件，并保存本地活动和排行榜数据。</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>EventLens 需要读取此项目的程序文件，并保存本地活动和排行榜数据。</string>
 </dict></plist>
