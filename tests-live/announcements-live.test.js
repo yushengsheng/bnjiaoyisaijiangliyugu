@@ -5,6 +5,8 @@ process.env.EVENTLENS_DATA_DIR = makeDataDir({ campaigns: [], snapshots: {}, his
 const api = require("../lib/binance-api");
 const { parseAnnouncement } = require("../lib/parser");
 const { crawlLeaderboard } = require("../lib/crawler");
+const storage = require("../lib/storage");
+const { computeRankingMetrics } = require("../lib/ranking");
 
 test("通过 bsmkweb.cc 导航获取真实公告列表和详情", { timeout: 180000 }, async t => {
   const articles = await api.getAnnouncementList(93, 1, 20);
@@ -30,6 +32,15 @@ test("旧域名活动通过 bsmkweb.cc 自动适配新域名并完整抓榜", { 
   assert.equal(snapshot.integrity.complete, true);
   assert.equal(snapshot.integrity.actualRecords, snapshot.integrity.expectedRecords);
   assert.ok(snapshot.eligibleUserCount > 0);
+  assert.equal(snapshot.rankEntries.length, Math.min(1000, snapshot.eligibleUserCount));
+  assert.doesNotMatch(JSON.stringify(snapshot.rankEntries), /userId|optInId|nickname/);
+  await storage.upsertCampaign(campaign);
+  await storage.saveSnapshot(campaign.id, snapshot);
+  const saved = await storage.getSnapshot(campaign.id);
+  const ranking = computeRankingMetrics(campaign, saved);
+  assert.equal(ranking.rankEntriesStatus, "available");
+  assert.equal(ranking.rankEntries.length, snapshot.rankEntries.length);
   assert.equal(campaign.landingUrl, oldUrl.href, "自动适配不应改写原始录入链接");
   t.diagnostic(`通过动态域名完整获取 ${snapshot.eligibleUserCount} 条记录`);
+  t.diagnostic(`前 ${ranking.rankEntries.length} 名匿名明细已保存并进入奖励计算`);
 });

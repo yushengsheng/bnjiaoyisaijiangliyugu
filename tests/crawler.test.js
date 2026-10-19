@@ -57,6 +57,21 @@ test("手动调度只按活动 ID 精确匹配", () => {
   assert.equal(findCampaignForImmediate(campaigns).id, "Round-A");
 });
 
+test("手动调度在读取活动期间也拒绝重复抓取，并在失败后释放状态", async t => {
+  const { CrawlerScheduler } = require("../lib/crawler");
+  const storage = require("../lib/storage");
+  let release;
+  let reads = 0;
+  t.mock.method(storage, "getCampaigns", () => ++reads === 1 ? new Promise(resolve => { release = resolve; }) : Promise.resolve([]));
+  const scheduler = new CrawlerScheduler();
+  const first = assert.rejects(scheduler.runImmediate("missing"), /未找到活动/);
+  try {
+    await assert.rejects(scheduler.runImmediate("missing"), /已有排行榜抓取任务/);
+  } finally { release([]); await first; }
+  assert.equal(reads, 1);
+  assert.equal(scheduler.isRunning, false);
+});
+
 test("数量后缀 K/M/B/万/亿 均按实际数量级解析", () => {
   assert.equal(parseVolume("$637.06M"), 637_060_000);
   assert.equal(parseVolume("1.2B"), 1_200_000_000);
@@ -136,6 +151,21 @@ test("参与人数小于门槛时后段为 0 且门槛显示不可用", () => {
   assert.equal(result.otherEligibleUserCount, 0);
   assert.equal(result.otherEligibleTradingVolume, 0);
   assert.equal(result.cutoff1000Volume, null);
+  assert.deepEqual(result.rankEntries.map(entry => [entry.rank, entry.volume]), [[1, 5], [2, 4]]);
+});
+
+test("只保存前1000条逐名数据并标记跨边界并列，不保存参与者身份", () => {
+  const count = 1002;
+  const page = mockPage(1, count, count, {
+    volumes: Array.from({ length: count }, (_, i) => count - i),
+    sequences: Array.from({ length: count }, (_, i) => i === 1000 ? 1000 : i + 1)
+  });
+  const snapshot = buildExactSnapshot({ resourceId: 123, pages: [page], cutoffRank: 1000 });
+  assert.equal(snapshot.rankEntries.length, 1000);
+  assert.equal(snapshot.rankEntries[999].rank, 1000);
+  assert.equal(snapshot.rankEntries[999].rewardAmbiguous, true);
+  assert.equal(snapshot.rankEntries[999].tied, true);
+  assert.doesNotMatch(JSON.stringify(snapshot.rankEntries), /userId|optInId|micros/);
 });
 
 test("分界为零时所有上榜量属于后段，不被默认1000覆盖", () => {

@@ -31,7 +31,8 @@ test("前端写请求使用本地会话令牌", () => {
 test("快速切换、手动刷新和抓榜完成均具有中止与请求版本保护", () => {
   assert.match(app, /AbortController/);
   assert.match(app, /loadCurrentCampaignDetails\(\{ force = false \}/);
-  assert.match(app, /loadCurrentCampaignDetails\(\{ force: true \}\)/);
+  assert.match(app, /refreshCampaigns\(\{ force: true \}\)/);
+  assert.match(app, /loadCurrentCampaignDetails\(\{ force \}\)/);
   assert.match(app, /const campaignId = state\.currentCampaign\.id/);
   assert.match(app, /crawlRequestId === state\.detailRequestId && campaignId === state\.currentCampaignId/);
   assert.match(app, /campaign\.id !== state\.currentCampaignId/);
@@ -105,4 +106,190 @@ test("活动卡片保留完整官方标题，MULTI 不覆盖名称且动态内�
   context.ui.renderCampaignButtons();
   assert.ok(container.innerHTML.includes("&lt;img"));
   assert.ok(!container.innerHTML.includes("<img"));
+});
+
+function campaignUI(groups) {
+  const elements = new Map();
+  const getElement = id => {
+    if (!elements.has(id)) {
+      const classes = new Set(id === "campaignDetails" ? ["hidden"] : []);
+      elements.set(id, {
+        innerHTML: "", textContent: "", style: {}, querySelectorAll: () => [],
+        classList: {
+          add: value => classes.add(value), remove: value => classes.delete(value),
+          contains: value => classes.has(value),
+          toggle: (value, enabled) => enabled ? classes.add(value) : classes.delete(value)
+        }
+      });
+    }
+    return elements.get(id);
+  };
+  const saved = new Map();
+  const location = { hash: "", pathname: "/", search: "" };
+  let currentGroups = groups;
+  const context = {
+    AbortController,
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    document: { getElementById: getElement },
+    location,
+    history: { replaceState: (_, __, url) => { location.hash = url.startsWith("#") ? url : ""; } },
+    localStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) },
+    fetch: async url => ({
+      ok: true,
+      json: async () => url === "/api/campaigns" ? { groups: currentGroups }
+        : { dataStatus: "unavailable", markets: [], entries: [], tiers: [] }
+    })
+  };
+  const source = app.replace("  init();\n})();", "  globalThis.ui = { state, selectCampaign, switchCampaignTab, refreshCampaigns, loadCampaigns, loadCurrentCampaignDetails, renderRankings, renderRankList, rankEstimate, updateCostInput };\n})();");
+  vm.runInNewContext(source, context);
+  return { ...context.ui, element: getElement, location, saved, setGroups: next => { currentGroups = next; }, setFetch: next => { context.fetch = next; } };
+}
+
+test("进行中为空时隐藏历史活动详情，切回历史后仍能选择和查看", async () => {
+  const ended = { id: "ended", name: "已结束联赛", status: "history" };
+  const ui = campaignUI({ active: [], history: [ended] });
+  await ui.loadCampaigns();
+  await ui.selectCampaign("ended");
+  assert.equal(ui.state.currentTab, "history");
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), false);
+  const requestId = ui.state.detailRequestId;
+  await ui.switchCampaignTab("active");
+  assert.equal(ui.state.currentCampaign, null);
+  assert.ok(ui.state.detailRequestId > requestId, "旧详情请求必须失效");
+  assert.equal(ui.location.hash, "");
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), true);
+  assert.match(ui.element("campaignList").innerHTML, /暂无进行中的活动/);
+  await ui.refreshCampaigns();
+  assert.equal(ui.state.currentTab, "active", "轮询不应将用户从空分类切走");
+  assert.equal(ui.state.currentCampaign, null);
+  await ui.switchCampaignTab("history");
+  assert.equal(ui.state.currentCampaignId, "ended");
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), false);
+});
+
+test("页面打开期间活动到期，同步分类、数量和当前详情且保留快照", async () => {
+  const active = { id: "league", name: "联赛", status: "active" };
+  const ui = campaignUI({ active: [active], history: [] });
+  await ui.loadCampaigns();
+  await ui.selectCampaign("league");
+  const ranking = { dataStatus: "available", eligibleUserCount: 3224 };
+  ui.state.rankingData = ranking;
+  ui.setGroups({ active: [], history: [{ ...active, status: "history" }] });
+  await ui.refreshCampaigns();
+  assert.equal(ui.state.currentTab, "history");
+  assert.equal(ui.state.currentCampaign.status, "history");
+  assert.equal(ui.element("countActive").textContent, 0);
+  assert.equal(ui.element("countHistory").textContent, 1);
+  assert.equal(ui.element("tabHistory").classList.contains("active"), true);
+  assert.equal(ui.element("currentStatusBadge").textContent, "已结束");
+  assert.equal(ui.state.rankingData, ranking, "归档不应清除已载入的排行榜快照");
+  ui.setGroups({ active: [], history: [] });
+  await ui.refreshCampaigns();
+  assert.equal(ui.state.currentCampaignId, null);
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), true);
+});
+
+test("逐名展示支持精确名次搜索、50条分页和当前币对成本利润估算", () => {
+  const ui = campaignUI({ active: [], history: [] });
+  ui.state.currentCampaign = { pairs: ["A/USDT", "A/USDC"] };
+  ui.state.rankingData = { rankEntriesStatus: "available", rankEntries: Array.from({ length: 1000 }, (_, index) => ({
+    rank: index + 1, position: index + 1, volume: 2000 - index, rewardAmount: 1.5, rewardToken: "USDC", rewardUsdt: 1.5, rewardUsdtUnrounded: 1.5
+  })) };
+  ui.state.marketData = { markets: [
+    { pair: "A/USDT", totalCostPer10k: 10, feeCostPer10k: 3, spreadLossPer10k: 7 },
+    { pair: "A/USDC", totalCostPer10k: 20, volumeMultiplier: 2 }
+  ] };
+  ui.renderRankings();
+  assert.equal((ui.element("rankList").innerHTML.match(/class="rank-entry"/g) || []).length, 50);
+  ui.state.rankSearch = "1000";
+  ui.renderRankList();
+  assert.equal((ui.element("rankList").innerHTML.match(/class="rank-entry"/g) || []).length, 1);
+  assert.match(ui.element("rankList").innerHTML, /data-position="1000"/);
+  ui.state.rankSearch = "1";
+  ui.renderRankList();
+  assert.equal((ui.element("rankList").innerHTML.match(/class="rank-entry"/g) || []).length, 1);
+  ui.state.rankSearch = "1001";
+  ui.renderRankList();
+  assert.match(ui.element("rankList").innerHTML, /请输入 1 至 1000/);
+  ui.state.rankSearch = "";
+  ui.state.rankPage = 19;
+  ui.renderRankList();
+  assert.match(ui.element("rankPageInfo").textContent, /951–1000/);
+  assert.equal(ui.element("rankNextPage").disabled, true);
+  assert.equal(ui.rankEstimate({ volume: 1000, rewardUsdtUnrounded: 1.5 }).profit, 0.5);
+  ui.state.rankCostPair = "A/USDC";
+  const estimate = ui.rankEstimate({ volume: 1000, rewardUsdtUnrounded: 1.5 });
+  assert.equal(estimate.actualVolume, 500);
+  assert.equal(estimate.cost, 2);
+  assert.equal(estimate.profit, -0.5);
+  assert.equal(ui.rankEstimate({ volume: 1000, rewardUsdt: null }).profit, null);
+  ui.state.marketData = null;
+  assert.equal(ui.rankEstimate({ volume: 1000, rewardUsdt: 10 }).cost, null);
+});
+
+test("旧快照不补造逐名交易量，保留汇总并提示获取新快照", () => {
+  const ui = campaignUI({ active: [], history: [] });
+  ui.state.currentCampaign = { tiers: [{ name: "第1名", rankFrom: 1, rankTo: 1, rewardPerUser: 12, rewardToken: "BNB" }] };
+  ui.state.rankingData = { rankEntriesStatus: "needs-refresh", tiers: [{ name: "第1名", rankFrom: 1, rankTo: 1, thresholdVolumeUsd: 5000, rewardPerUser: 12, rewardToken: "BNB" }] };
+  ui.renderRankings();
+  assert.match(ui.element("rankSummaryGrid").innerHTML, /\$5,000/);
+  assert.match(ui.element("rankDataStatus").textContent, /旧快照未保存逐名交易量/);
+  assert.doesNotMatch(ui.element("rankList").innerHTML, /class="rank-entry"/);
+  assert.equal(ui.element("rankRefreshBtn").classList.contains("hidden"), false);
+});
+
+test("刷新行情失败时保留排行榜但停止用旧盘口估算成本和利润", async () => {
+  const { sampleCampaign, sampleSnapshot } = require("./helpers");
+  const { computeRankingMetrics } = require("../lib/ranking");
+  const campaign = sampleCampaign();
+  const ranking = computeRankingMetrics(campaign, sampleSnapshot(), 700);
+  const ui = campaignUI({ active: [campaign], history: [] });
+  ui.state.currentCampaign = campaign;
+  ui.state.currentCampaignId = campaign.id;
+  ui.state.rankingData = ranking;
+  ui.state.marketData = { markets: [{ pair: "SAMPLE/USDT", totalCostPer10k: 10 }] };
+  ui.setFetch(async url => {
+    if (url.startsWith("/api/binance/market")) throw new Error("offline");
+    return { ok: true, json: async () => url.startsWith("/api/binance/ranking") ? ranking : { entries: [] } };
+  });
+  await ui.loadCurrentCampaignDetails({ force: true });
+  assert.equal(ui.state.marketData, null);
+  assert.equal(ui.state.rankingData.eligibleTradingVolume, 15000);
+  assert.equal(ui.rankEstimate({ volume: 1000, rewardUsdt: 1 }).profit, null);
+  assert.equal(ui.element("netProfitPer10k").textContent, "—");
+  assert.match(ui.element("detailStatus").textContent, /行情.*offline/);
+});
+
+test("活动列表同步失败会显示提示，不抛出未处理的轮询异常", async () => {
+  const ui = campaignUI({ active: [], history: [] });
+  ui.setFetch(async () => { throw new Error("offline"); });
+  await assert.doesNotReject(ui.refreshCampaigns());
+  assert.match(ui.element("detailStatus").textContent, /活动列表同步失败.*offline/);
+});
+
+test("空值及越界费率暂停估算，后台行情不能恢复旧参数利润，有效零费率可恢复", () => {
+  const { sampleCampaign, sampleSnapshot } = require("./helpers");
+  const { computeRankingMetrics } = require("../lib/ranking");
+  const ui = campaignUI({ active: [], history: [] });
+  ui.state.currentCampaign = sampleCampaign();
+  ui.state.rankingData = computeRankingMetrics(ui.state.currentCampaign, sampleSnapshot(), 700);
+  const input = { value: "0.1", setCustomValidity(value) { this.validationMessage = value; }, setAttribute() {} };
+  ui.updateCostInput(input, "feeRate", 0.02, "基础费率");
+  assert.equal(ui.state.costInputValidity.feeRate, false);
+  assert.match(input.validationMessage, /基础费率/);
+  ui.state.marketData = { markets: [{ pair: "SAMPLE/USDT", totalCostPer10k: 10 }] };
+  assert.equal(ui.rankEstimate({ volume: 1000, rewardUsdt: 1 }).profit, null);
+  input.value = "";
+  ui.updateCostInput(input, "feeRate", 0.02, "基础费率");
+  assert.equal(ui.state.feeRate, 0.00075, "空输入不能按零费率计算");
+  assert.equal(ui.element("netProfitPer10k").textContent, "—");
+  input.value = "0";
+  ui.updateCostInput(input, "feeRate", 0.02, "基础费率");
+  assert.equal(ui.state.feeRate, 0);
+  assert.equal(ui.state.costInputValidity.feeRate, true);
+  assert.equal(input.validationMessage, "");
+  input.value = "2";
+  ui.updateCostInput(input, "rebateRate", 1, "返佣比例");
+  assert.equal(ui.state.costInputValidity.rebateRate, false);
 });

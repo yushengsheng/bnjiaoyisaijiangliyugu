@@ -67,7 +67,9 @@
       <div id="campaignList" class="campaign-list">
         <!-- 由 JS 动态渲染 -->
       </div>
+      <div id="detailStatus" class="detail-status hidden" role="status" aria-live="polite"></div>
 
+      <div id="campaignDetails" class="hidden">
       <!-- 活动标题与状态 -->
       <div class="section-heading">
         <div>
@@ -84,7 +86,6 @@
           </button>
         </div>
       </div>
-      <div id="detailStatus" class="detail-status hidden" role="status" aria-live="polite"></div>
 
       <!-- 四宫格指标卡片 (EventLens 核心风格) -->
       <section class="summary-grid">
@@ -229,19 +230,34 @@
         </div>
       </section>
 
-      <!-- 奖励结构与阶梯门槛 (Tier Grid) -->
-      <section class="reward-section panel">
+      <section id="rankingsSection" class="reward-section panel">
         <div class="reward-heading">
           <div class="reward-icon">↗</div>
           <div>
-            <p class="eyebrow">REWARD STRUCTURE</p>
-            <h2>阶梯奖励与排名门槛</h2>
+            <p class="eyebrow">TOP 1,000</p>
+            <h2>前 1,000 名排名明细</h2>
           </div>
         </div>
-        <div id="tierGrid" class="tier-grid">
-          <!-- 由 JS 动态渲染各阶段门槛与奖励 -->
+        <div class="rank-toolbar">
+          <label>搜索名次<input id="rankSearch" type="search" inputmode="numeric" placeholder="输入名次，如 500" aria-label="搜索第1至1000名"></label>
+          <label>成本估算币对<select id="rankCostPair" aria-label="排名成本估算币对"><option value="auto">当前可用币对中成本最低</option></select></label>
+          <button id="rankRefreshBtn" class="btn-secondary small hidden">获取逐名排行榜</button>
         </div>
+        <p id="rankCostBasis" class="rank-note"></p>
+        <div id="rankSummaryGrid" class="rank-summary-grid"></div>
+        <details id="rankDetails" class="rank-details">
+          <summary><span id="rankExpandLabel">展开逐名详细信息</span><span id="rankEntryCount" class="rank-note"></span></summary>
+          <p id="rankDataStatus" class="rank-note" role="status" aria-live="polite"></p>
+          <div id="rankList" class="rank-list"></div>
+          <div id="rankPagination" class="rank-pagination hidden">
+            <button id="rankPrevPage" class="btn-secondary small">上一页</button>
+            <span id="rankPageInfo" class="rank-note"></span>
+            <button id="rankNextPage" class="btn-secondary small">下一页</button>
+          </div>
+        </details>
       </section>
+
+      </div>
 
       <!-- 官方最新活动弹窗 (Modal) -->
       <div id="announcementModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="announcementModalTitle">

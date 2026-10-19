@@ -12,6 +12,7 @@
     bnbPrice: null,
     feeRate: 0.00075,
     rebateRate: 0.485,
+    costInputValidity: { feeRate: true, rebateRate: true },
     sessionToken: null,
     nextRunTime: null,
     autoUpdateEnabled: true,
@@ -21,7 +22,10 @@
     detailLoading: false,
     feeTimer: null,
     noticeTimer: null,
-    crawlProgressHideTimer: null
+    crawlProgressHideTimer: null,
+    rankSearch: "",
+    rankPage: 0,
+    rankCostPair: "auto"
   };
 
   const $ = id => document.getElementById(id);
@@ -77,7 +81,7 @@
       "no-tail-pool": "后段奖励池待核对",
       "no-tail-users": "当前人数尚未进入后段",
       "no-tail-volume": "暂无后段交易量数据",
-      "ranked-volume": "已达到排名奖励门槛，请查看阶梯奖励",
+      "ranked-volume": "已达到排名奖励门槛，请查看下方排名明细",
       "unknown-cutoff": "排名门槛未知，暂不估算后段奖励",
       "rank-tie": "排名边界存在并列，请核对分配规则",
       "rules-unverified": "活动规则待核对，暂不估算奖励",
@@ -86,6 +90,7 @@
   }
 
   function calculateRoi() {
+    if (!Object.values(state.costInputValidity).every(Boolean)) return null;
     const ranking = state.rankingData;
     const reward = ranking?.rewardPer10kUsdtUnrounded ?? ranking?.rewardPer10kUsdt;
     if (!ranking || !hasNumber(ranking.rewardPer10k) || !hasNumber(reward)) return null;
@@ -206,7 +211,10 @@
     $("summaryCutoffVolume").textContent = "$—";
     $("summaryCutoffDetail").textContent = "等待排行榜数据";
     $("marketGrid").innerHTML = '<div class="empty-state">正在读取盘口数据…</div>';
-    $("tierGrid").innerHTML = '<div class="empty-state">正在读取奖励结构…</div>';
+    $("rankSummaryGrid").innerHTML = '<div class="empty-state">正在读取排名汇总…</div>';
+    $("rankList").innerHTML = '<div class="empty-state">正在读取逐名排行榜…</div>';
+    $("rankEntryCount").textContent = "";
+    $("rankDataStatus").textContent = "";
     $("trendGrid").innerHTML = '<div class="empty-state">正在读取历史快照…</div>';
     for (const id of ["statTotalUsers", "statTotalVolume", "statTopUsers", "statTopVolume", "statTailUsers", "statTailVolume", "rewardPer1kToken", "rewardPer1kUsdt", "rewardPer10kToken", "rewardPer10kUsdt", "netProfitPer10k"]) {
       $(id).textContent = "—";
@@ -215,9 +223,40 @@
 
   function rememberSelection(id, updateUrl) {
     try {
-      localStorage.setItem("eventlens_active_campaign", id);
-      if (updateUrl && location.hash !== `#${id}`) history.replaceState(null, "", `#${encodeURIComponent(id)}`);
+      if (id) localStorage.setItem("eventlens_active_campaign", id);
+      else localStorage.removeItem("eventlens_active_campaign");
+      if (updateUrl) history.replaceState(null, "", id ? `#${encodeURIComponent(id)}` : `${location.pathname}${location.search}`);
     } catch (_) {}
+  }
+
+  function renderCampaignTabs() {
+    $("tabActive").classList.toggle("active", state.currentTab === "active");
+    $("tabHistory").classList.toggle("active", state.currentTab === "history");
+  }
+
+  function clearCampaignSelection() {
+    state.detailController?.abort();
+    state.detailRequestId++;
+    state.marketRequestId++;
+    state.detailLoading = false;
+    state.currentCampaignId = null;
+    state.currentCampaign = null;
+    clearDetailData();
+    $("campaignDetails").classList.add("hidden");
+    setDetailStatus();
+    rememberSelection(null, true);
+  }
+
+  async function switchCampaignTab(tab) {
+    state.currentTab = tab;
+    renderCampaignTabs();
+    const list = state.campaigns[tab];
+    if (!list.length) clearCampaignSelection();
+    else if (!list.some(item => item.id === state.currentCampaignId)) {
+      await selectCampaign(list[0].id, true);
+      return;
+    }
+    renderCampaignButtons();
   }
 
   async function selectCampaign(id, updateUrl = true) {
@@ -230,9 +269,14 @@
     state.detailLoading = false;
     state.currentCampaignId = campaign.id;
     state.currentCampaign = campaign;
+    state.rankSearch = "";
+    state.rankPage = 0;
+    state.rankCostPair = "auto";
+    $("rankSearch").value = "";
+    $("rankDetails").open = false;
     state.currentTab = campaign.status === "history" ? "history" : "active";
-    $("tabActive").classList.toggle("active", state.currentTab === "active");
-    $("tabHistory").classList.toggle("active", state.currentTab === "history");
+    renderCampaignTabs();
+    $("campaignDetails").classList.remove("hidden");
     rememberSelection(campaign.id, updateUrl);
     renderCampaignButtons();
     renderCampaignHeader();
@@ -241,7 +285,7 @@
     await loadCurrentCampaignDetails();
   }
 
-  async function loadCampaigns() {
+  async function loadCampaigns({ restoreSelection = true } = {}) {
     const data = await api("/api/campaigns");
     state.campaigns = data.groups || { active: [], history: [] };
     $("countActive").textContent = state.campaigns.active.length;
@@ -253,17 +297,33 @@
       hashId = location.hash ? decodeURIComponent(location.hash.slice(1)) : null;
       savedId = localStorage.getItem("eventlens_active_campaign");
     } catch (_) {}
-    const targetId = [hashId, savedId, state.currentCampaignId].find(id => id && all.some(item => item.id === id))
-      || state.campaigns.active[0]?.id
-      || all[0]?.id
+    const candidates = restoreSelection ? [hashId, savedId, state.currentCampaignId] : [state.currentCampaignId];
+    const targetId = candidates.find(id => id && all.some(item => item.id === id))
+      || state.campaigns[state.currentTab][0]?.id
+      || (restoreSelection ? all[0]?.id : null)
       || null;
-    if (!targetId) {
-      state.currentCampaign = null;
-      state.currentCampaignId = null;
-      renderCampaignButtons();
-      setDetailStatus("当前没有活动，可通过上方链接添加。", "info");
+    const current = all.find(item => item.id === state.currentCampaignId);
+    if (current) {
+      state.currentCampaign = current;
+      state.currentTab = current.status === "history" ? "history" : "active";
+      renderCampaignHeader();
+      renderSummaryCards();
+    } else if (state.currentCampaignId || !targetId) {
+      clearCampaignSelection();
     }
+    renderCampaignTabs();
+    renderCampaignButtons();
     return targetId;
+  }
+
+  async function refreshCampaigns({ force = false } = {}) {
+    try {
+      const targetId = await loadCampaigns({ restoreSelection: false });
+      if (targetId && targetId !== state.currentCampaignId) await selectCampaign(targetId, true);
+      else if (state.currentCampaign?.status !== "history" || force) await loadCurrentCampaignDetails({ force });
+    } catch (error) {
+      setDetailStatus(`活动列表同步失败：${error.message}`, "warning");
+    }
   }
 
   async function loadCurrentCampaignDetails({ force = false } = {}) {
@@ -295,18 +355,21 @@
       const errors = [];
       if (results[0].status === "fulfilled") state.rankingData = results[0].value;
       else errors.push(`排行榜：${results[0].reason.message}`);
-      if (results[1].status === "fulfilled" && marketRequestId === state.marketRequestId) state.marketData = results[1].value;
-      else if (results[1].status === "rejected") errors.push(`行情：${results[1].reason.message}`);
+      if (marketRequestId === state.marketRequestId) {
+        state.marketData = results[1].status === "fulfilled" ? results[1].value : null;
+        if (results[1].status === "rejected") errors.push(`行情：${results[1].reason.message}`);
+      }
       if (results[2].status === "fulfilled") state.historyData = results[2].value.entries || [];
       else errors.push(`历史：${results[2].reason.message}`);
 
       renderSummaryCards();
       renderMarketAnalysis();
       renderRankingAndRoi();
-      renderTiers();
+      renderRankings();
       renderHistory();
       if (errors.length) setDetailStatus(errors.join("；"), "warning");
       else if (state.rankingData?.dataStatus !== "available") setDetailStatus("活动规则已载入，但还没有成功的排行榜快照。", "warning");
+      else if (!Object.values(state.costInputValidity).every(Boolean)) setDetailStatus("费率或返佣输入无效，请修正后再计算成本和利润。", "warning");
       else setDetailStatus("", "info");
     } catch (error) {
       if (error.name !== "AbortError" && requestId === state.detailRequestId) setDetailStatus(`加载失败：${error.message}`, "error");
@@ -317,7 +380,7 @@
 
   async function reloadMarketOnly() {
     const campaign = state.currentCampaign;
-    if (!campaign) return;
+    if (!campaign || !Object.values(state.costInputValidity).every(Boolean)) return;
     const requestId = ++state.marketRequestId;
     try {
       const marketData = await api(`/api/binance/market?campaignId=${encodeURIComponent(campaign.id)}&feeRate=${state.feeRate}&rebateRate=${state.rebateRate}`);
@@ -325,11 +388,13 @@
       state.marketData = marketData;
       renderMarketAnalysis();
       renderRankingAndRoi();
+      renderRankings();
     } catch (error) {
       if (requestId !== state.marketRequestId || campaign.id !== state.currentCampaignId) return;
       state.marketData = null;
       renderMarketAnalysis();
       renderRankingAndRoi();
+      renderRankings();
       setDetailStatus(`行情参数更新失败：${error.message}`, "warning");
     }
   }
@@ -416,6 +481,13 @@
   }
 
   function renderMarketAnalysis() {
+    if (!Object.values(state.costInputValidity).every(Boolean)) {
+      $("marketGrid").innerHTML = '<div class="empty-state error-text">费率或返佣输入无效，已暂停成本和利润估算。</div>';
+      $("marketUpdatedTime").textContent = "等待有效的费率参数";
+      $("displayActualFeeRate").textContent = "—";
+      $("feeCostFormula").textContent = "请修正基础费率或返佣比例";
+      return;
+    }
     const data = state.marketData;
     const grid = $("marketGrid");
     if (!data) {
@@ -493,32 +565,121 @@
     }
   }
 
-  function renderTiers() {
+  function rankCostPair() {
+    if (!Object.values(state.costInputValidity).every(Boolean)) return null;
+    const markets = (state.marketData?.markets || []).filter(pair => hasNumber(pair.totalCostPer10k) && pair.totalCostPer10k >= 0);
+    return state.rankCostPair === "auto"
+      ? markets.sort((a, b) => a.totalCostPer10k - b.totalCostPer10k)[0] || null
+      : markets.find(pair => pair.pair === state.rankCostPair) || null;
+  }
+
+  function rankEstimate(entry, pair = rankCostPair()) {
+    const cost = pair && hasNumber(entry.volume) ? Number(entry.volume) * pair.totalCostPer10k / 10000 : null;
+    const rewardUsdt = entry.rewardUsdtUnrounded ?? entry.rewardUsdt;
+    return {
+      cost,
+      actualVolume: pair && hasNumber(entry.volume) ? entry.volume / (pair.volumeMultiplier || 1) : null,
+      fee: pair && hasNumber(pair.feeCostPer10k) && hasNumber(entry.volume) ? entry.volume * pair.feeCostPer10k / 10000 : null,
+      spread: pair && hasNumber(pair.spreadLossPer10k) && hasNumber(entry.volume) ? entry.volume * pair.spreadLossPer10k / 10000 : null,
+      profit: cost !== null && hasNumber(rewardUsdt) ? Number(rewardUsdt) - cost : null
+    };
+  }
+
+  function rankRewardText(entry) {
+    if (hasNumber(entry.rewardAmount)) return `${formatters.token(entry.rewardAmount)} ${escapeHtml(entry.rewardToken)}`;
+    return { "rank-tie": "并列奖励待核对", "no-reward-rule": "奖励规则待核对", "rules-unverified": "奖励规则待核对",
+      "unsupported-distribution": "分配规则待核对" }[entry.rewardStatus] || "奖励不可用";
+  }
+
+  function profitClass(value) {
+    return hasNumber(value) ? Number(value) >= 0 ? "rank-profit-positive" : "rank-profit-negative" : "";
+  }
+
+  function renderRankings() {
     const ranking = state.rankingData;
     const campaign = state.currentCampaign;
     const tiers = ranking?.tiers || campaign?.tiers || [];
     const bonusRewards = campaign?.bonusRewards || [];
-    const grid = $("tierGrid");
-    if (!tiers.length && !bonusRewards.length) {
-      grid.innerHTML = `<div class="empty-state warning-text">${campaign?.needsReview ? "奖励规则尚未可靠解析，请核对官方公告。" : "暂无阶梯奖励数据。"}</div>`;
-      return;
-    }
-    const tierCards = tiers.map(tier => `<article class="tier-card">
+    const pair = rankCostPair();
+    const pairs = [...new Set([...(campaign?.pairs || []), ...(state.marketData?.markets || []).map(item => item.pair)])];
+    $("rankCostPair").innerHTML = '<option value="auto">当前可用币对中成本最低</option>' + pairs.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+    $("rankCostPair").value = state.rankCostPair;
+    $("rankCostBasis").textContent = !Object.values(state.costInputValidity).every(Boolean)
+      ? "费率或返佣输入无效，暂不计算成本和利润；交易量与对应奖励仍可查看。"
+      : pair
+      ? `成本按 ${pair.pair} 当前盘口、基础费率 ${((state.marketData?.feeRate ?? state.feeRate) * 100).toFixed(4)}%、返佣 ${((state.marketData?.rebateRate ?? state.rebateRate) * 100).toFixed(1)}%及 ${pair.volumeMultiplier || 1} 倍计入量估算；利润 = 奖励当前估值 − 估算成本。未计独立分轮奖励，不代表参赛者实际盈亏。`
+      : "所选币对盘口不可用，暂不计算成本和利润；交易量与对应奖励仍可查看。";
+    const tierCards = tiers.filter(tier => Number(tier.rankFrom) <= 1000).map(tier => {
+      const reward = campaign?.needsReview ? null : tier.rewardPerUser;
+      const rewardUsdt = campaign?.needsReview ? null : tier.rewardUsdtUnrounded ?? tier.rewardUsdt;
+      const estimate = rankEstimate({ volume: tier.thresholdVolumeUsd, rewardUsdtUnrounded: rewardUsdt }, pair);
+      return `<article class="tier-card rank-summary-card">
       <p>${escapeHtml(tier.name)}</p>
-      <strong>${hasNumber(tier.thresholdVolumeUsd) ? formatters.money(tier.thresholdVolumeUsd, 0) : "等待排行榜"}</strong>
-      <div class="tier-reward"><span>单人奖励</span><b>${formatters.token(tier.rewardPerUser)} ${escapeHtml(tier.rewardToken)}</b></div>
-      <small>${tier.rewardUsdt !== null && tier.rewardUsdt !== undefined ? `≈ ${formatters.money(tier.rewardUsdt)} USDT` : "奖励估值不可用"}</small>
-    </article>`);
+      <div class="rank-summary-metric"><span>末名交易量</span><b>${hasNumber(tier.thresholdVolumeUsd) ? formatters.money(tier.thresholdVolumeUsd, 0) : "等待排行榜"}</b></div>
+      <div class="rank-summary-metric"><span>每名奖励</span><div class="rank-summary-value"><b class="rank-summary-reward">${hasNumber(reward) ? `${formatters.token(reward)} ${escapeHtml(tier.rewardToken)}` : "规则待核对"}</b><small>${hasNumber(rewardUsdt) ? `≈ ${formatters.money(rewardUsdt)} USDT` : "奖励估值不可用"}</small></div></div>
+      <div class="rank-summary-metric"><span>末名估算成本</span><b>${formatters.money(estimate.cost)}</b></div>
+      <div class="rank-summary-metric"><span>末名估算利润</span><b class="${profitClass(estimate.profit)}">${formatters.money(estimate.profit)}</b></div>
+    </article>`;
+    });
     const bonusCards = bonusRewards.map(item => {
       const price = rewardPriceFor(item.rewardToken);
-      return `<article class="tier-card bonus-tier">
+      return `<article class="tier-card rank-summary-card bonus-tier">
         <p>${escapeHtml(item.name)}</p>
-        <strong>${formatters.token(item.totalReward)} ${escapeHtml(item.rewardToken)}</strong>
-        <div class="tier-reward"><span>独立分轮奖池</span><b>${formatters.number(item.roundCount)} 轮</b></div>
-        <small>${price ? `≈ ${formatters.money(item.totalReward * price)} USDT · 不计入主榜门槛` : "不计入主榜门槛"}</small>
+        <div class="rank-summary-metric"><span>分轮奖池</span><div class="rank-summary-value"><b class="rank-summary-reward">${formatters.token(item.totalReward)} ${escapeHtml(item.rewardToken)}</b>${price ? `<small>≈ ${formatters.money(item.totalReward * price)} USDT</small>` : ""}</div></div>
+        <div class="rank-summary-metric"><span>轮数</span><b>${formatters.number(item.roundCount)} 轮</b></div>
+        <small>独立奖励，不计入主榜门槛</small>
       </article>`;
     });
-    grid.innerHTML = [...tierCards, ...bonusCards].join("");
+    $("rankSummaryGrid").innerHTML = [...tierCards, ...bonusCards].join("") || `<div class="empty-state warning-text">${campaign?.needsReview ? "奖励规则尚未可靠解析，请核对官方公告。" : "暂无排名奖励汇总。"}</div>`;
+    const entries = ranking?.rankEntries || [];
+    $("rankEntryCount").textContent = entries.length ? `已保存 ${formatters.number(entries.length)} 条` : "暂无逐名快照";
+    const needsRefresh = ranking?.rankEntriesStatus !== "available";
+    $("rankRefreshBtn").classList.toggle("hidden", !needsRefresh);
+    $("rankRefreshBtn").disabled = $("triggerCrawlBtn").disabled;
+    $("rankDataStatus").textContent = needsRefresh
+      ? "旧快照未保存逐名交易量。点击“获取逐名排行榜”完成更新后即可查看；上方保留已有汇总。"
+      : `榜单时间：${formatters.time(ranking.sourceUpdatedAt || ranking.collectedAt)}。点击任一名次可展开手续费、价差和奖励明细。${entries.length < 1000 ? `当前仅有 ${entries.length} 名参赛者。` : ""}`;
+    renderRankList();
+  }
+
+  function renderRankList() {
+    const entries = state.rankingData?.rankEntries || [];
+    const query = state.rankSearch.trim();
+    const validQuery = !query || /^[1-9]\d{0,3}$/.test(query) && Number(query) <= 1000;
+    const list = $("rankList");
+    const matching = validQuery ? entries.filter(entry => !query || entry.rank === Number(query)) : [];
+    const pageCount = Math.ceil(matching.length / 50);
+    state.rankPage = Math.min(Math.max(0, state.rankPage), Math.max(0, pageCount - 1));
+    const start = state.rankPage * 50;
+    const page = matching.slice(start, start + 50);
+    const pair = rankCostPair();
+    const opened = new Set([...list.querySelectorAll("details[open]")].map(element => Number(element.dataset.position)));
+    list.innerHTML = page.map(entry => {
+      const estimate = rankEstimate(entry, pair);
+      return `<details class="rank-entry" data-position="${entry.position}"${opened.has(entry.position) ? " open" : ""}>
+        <summary>
+          <span class="rank-number">第 ${formatters.number(entry.rank)} 名${entry.tied ? '<small>并列</small>' : ""}</span>
+          <span><small>榜单交易量</small><b>${formatters.money(entry.volume)}</b></span>
+          <span><small>估算交易成本</small><b>${formatters.money(estimate.cost)}</b></span>
+          <span><small>对应奖励</small><b>${rankRewardText(entry)}</b><small>${hasNumber(entry.rewardUsdt) ? `≈ ${formatters.money(entry.rewardUsdt)} USDT` : "奖励估值不可用"}</small></span>
+          <span><small>估算利润（USDT）</small><b class="${profitClass(estimate.profit)}">${formatters.money(estimate.profit)}</b></span>
+          <span class="rank-arrow" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="rank-entry-detail">
+          <div><span>估算币对 / 计入倍数</span><b>${pair ? `${escapeHtml(pair.pair)} / ${pair.volumeMultiplier || 1}x` : "盘口不可用"}</b></div>
+          <div><span>折算实际成交量</span><b>${formatters.money(estimate.actualVolume)}</b></div>
+          <div><span>扣除返佣后的手续费</span><b>${formatters.money(estimate.fee)}</b></div>
+          <div><span>买卖价差成本</span><b>${formatters.money(estimate.spread)}</b></div>
+          <div><span>对应奖励规则</span><b>${escapeHtml(entry.rewardName)}</b></div>
+          <div><span>利润计算</span><b>${hasNumber(estimate.profit) ? `${formatters.money(entry.rewardUsdtUnrounded ?? entry.rewardUsdt)} − ${formatters.money(estimate.cost)} = ${formatters.money(estimate.profit)}` : "缺少可核对的奖励或成本，暂不估算"}</b></div>
+          ${entry.tied ? `<p class="rank-note">官方并列名次，榜单顺序为第 ${entry.position} 条。${entry.rewardAmbiguous ? "并列跨越奖励边界，具体奖励需按官方规则核对。" : ""}</p>` : ""}
+        </div>
+      </details>`;
+    }).join("") || `<div class="empty-state">${!validQuery ? "请输入 1 至 1000 的整数名次。" : !entries.length ? "暂无逐名快照，请先获取逐名排行榜。" : "当前榜单未找到该名次。"}</div>`;
+    $("rankPagination").classList.toggle("hidden", pageCount <= 1);
+    $("rankPrevPage").disabled = state.rankPage === 0;
+    $("rankNextPage").disabled = state.rankPage >= pageCount - 1;
+    $("rankPageInfo").textContent = matching.length ? `第 ${start + 1}–${start + page.length} 条，共 ${formatters.number(matching.length)} 条` : "";
   }
 
   function sparkline(values, color) {
@@ -578,6 +739,7 @@
     const percent = $("crawlProgressPercent");
     const fill = $("crawlProgressBarFill");
     button.disabled = true;
+    $("rankRefreshBtn").disabled = true;
     button.textContent = "正在完整抓取…";
     clearTimeout(state.crawlProgressHideTimer);
     box.classList.remove("hidden");
@@ -603,7 +765,7 @@
         state.rankingData = data.rankingData;
         if (crawlMarketRequestId === state.marketRequestId) state.marketData = data.marketData;
         state.historyData = history.entries || [];
-        renderSummaryCards(); renderMarketAnalysis(); renderRankingAndRoi(); renderTiers(); renderHistory();
+        renderSummaryCards(); renderMarketAnalysis(); renderRankingAndRoi(); renderRankings(); renderHistory();
         triggerCardsHighlight();
       }
       showImportNotice(campaignId === state.currentCampaignId ? data.message : "后台活动排行榜已更新，当前页面未被切换覆盖", "success");
@@ -618,6 +780,7 @@
       if (crawlRequestId === state.detailRequestId) state.detailLoading = false;
       clearInterval(polling);
       button.disabled = false;
+      $("rankRefreshBtn").disabled = false;
       button.textContent = "⚡ 立即更新排行榜";
       await loadSchedulerStatus();
     }
@@ -694,7 +857,7 @@
   function exportAnalysisCsv() {
     const campaign = state.currentCampaign;
     const ranking = state.rankingData;
-    const market = state.marketData;
+    const market = Object.values(state.costInputValidity).every(Boolean) ? state.marketData : null;
     if (!campaign || ranking?.dataStatus !== "available") return showImportNotice("暂无可导出的成功排行榜快照", "warning");
     const cutoff = ranking.cutoffRank;
     const rows = [
@@ -710,7 +873,7 @@
       ["每10000U估算状态", rewardStatusText(ranking.rewardPer10kStatus || ranking.rewardEstimateStatus)],
       ["后段分配方式", ranking.distribution === "equal" ? "按人数均分" : ranking.distribution === "proportional" ? "按交易量比例" : "待核对"],
       ["估算说明", $("roiFormulaNote").textContent],
-      ["基础费率", market?.feeRate ?? state.feeRate], ["返佣比例", market?.rebateRate ?? state.rebateRate],
+      ["基础费率", state.costInputValidity.feeRate ? market?.feeRate ?? state.feeRate : "N/A"], ["返佣比例", state.costInputValidity.rebateRate ? market?.rebateRate ?? state.rebateRate : "N/A"],
       ["奖励币价格(USDT)", ranking.rewardTokenPrice ?? "N/A"],
       ["每1000U奖励估值(USDT)", ranking.rewardPer1kUsdt ?? "N/A"],
       ["每10000U奖励估值(USDT)", ranking.rewardPer10kUsdt ?? "N/A"],
@@ -718,8 +881,18 @@
       ["参赛币对成本", "计入倍数", "买一", "卖一", "价差率%", "每千U榜单计入量手续费", "每千U榜单计入量价差成本", "每千U榜单计入量总成本", "每万U榜单计入量总成本"]
     ];
     for (const pair of market?.markets || []) rows.push([pair.pair, pair.volumeMultiplier || 1, pair.bidPrice, pair.askPrice, pair.spreadPercent, pair.feeCostPer1000, pair.spreadLossPer1000, pair.totalCostPer1000, pair.totalCostPer10k]);
-    rows.push([""], ["阶梯奖励", "当前门槛", "单人奖励", "USDT估值"]);
-    for (const tier of ranking.tiers || []) rows.push([tier.name, tier.thresholdVolumeUsd ?? "N/A", `${tier.rewardPerUser} ${tier.rewardToken}`, tier.rewardUsdt ?? "N/A"]);
+    rows.push([""], ["排名奖励汇总", "该档末名交易量", "每名奖励", "USDT估值"]);
+    for (const tier of ranking.tiers || []) {
+      const verified = !campaign.needsReview && hasNumber(tier.rewardPerUser);
+      rows.push([tier.name, tier.thresholdVolumeUsd ?? "N/A", verified ? `${tier.rewardPerUser} ${tier.rewardToken}` : "规则待核对", verified ? tier.rewardUsdt ?? "N/A" : "N/A"]);
+    }
+    rows.push([""], ["前1000名逐名明细", "榜单交易量(USD)", "估算成本(USDT)", "奖励", "奖励估值(USDT)", "估算利润(USDT)", "估算币对"]);
+    const rankPair = rankCostPair();
+    for (const entry of ranking.rankEntries || []) {
+      const estimate = rankEstimate(entry, rankPair);
+      rows.push([entry.rank, entry.volume, estimate.cost ?? "N/A", hasNumber(entry.rewardAmount) ? `${entry.rewardAmount} ${entry.rewardToken}` : entry.rewardStatus,
+        entry.rewardUsdt ?? "N/A", estimate.profit ?? "N/A", rankPair?.pair ?? "N/A"]);
+    }
     rows.push([""], ["独立分轮奖池", "轮数", "奖池", "USDT估值"]);
     for (const bonus of campaign.bonusRewards || []) {
       const price = rewardPriceFor(bonus.rewardToken);
@@ -743,31 +916,55 @@
     state.feeTimer = setTimeout(reloadMarketOnly, 350);
   }
 
+  function updateCostInput(input, field, max, label) {
+    const value = input.value.trim();
+    const number = Number(value);
+    const valid = value !== "" && Number.isFinite(number) && number >= 0 && number <= max;
+    state.costInputValidity[field] = valid;
+    const message = valid ? "" : `${label}必须填写 0 到 ${max} 之间的数值；已暂停成本和利润估算。`;
+    input.setCustomValidity(message);
+    input.setAttribute("aria-invalid", String(!valid));
+    clearTimeout(state.feeTimer);
+    state.marketRequestId++;
+    state.marketData = null;
+    if (valid) state[field] = number;
+    if (state.currentCampaign) {
+      renderMarketAnalysis(); renderRankingAndRoi(); renderRankings();
+    }
+    if (!valid) setDetailStatus(message, "warning");
+    else if (Object.values(state.costInputValidity).every(Boolean)) {
+      if (/基础费率必须|返佣比例必须|费率或返佣输入无效/.test($("detailStatus").textContent)) setDetailStatus();
+      scheduleFeeRefresh();
+    }
+  }
+
   function bindEvents() {
-    $("tabActive").addEventListener("click", async () => {
-      state.currentTab = "active";
-      $("tabActive").classList.add("active"); $("tabHistory").classList.remove("active");
-      const list = state.campaigns.active;
-      if (list.length && !list.some(item => item.id === state.currentCampaignId)) await selectCampaign(list[0].id, true);
-      else renderCampaignButtons();
+    $("tabActive").addEventListener("click", () => switchCampaignTab("active"));
+    $("tabHistory").addEventListener("click", () => switchCampaignTab("history"));
+    $("rankSearch").addEventListener("input", event => {
+      state.rankSearch = event.target.value;
+      state.rankPage = 0;
+      if (state.rankSearch.trim()) $("rankDetails").open = true;
+      renderRankList();
     });
-    $("tabHistory").addEventListener("click", async () => {
-      state.currentTab = "history";
-      $("tabHistory").classList.add("active"); $("tabActive").classList.remove("active");
-      const list = state.campaigns.history;
-      if (list.length && !list.some(item => item.id === state.currentCampaignId)) await selectCampaign(list[0].id, true);
-      else renderCampaignButtons();
+    $("rankCostPair").addEventListener("change", event => {
+      state.rankCostPair = event.target.value;
+      renderRankings();
     });
+    $("rankDetails").addEventListener("toggle", event => {
+      $("rankExpandLabel").textContent = event.currentTarget.open ? "收起逐名详细信息" : "展开逐名详细信息";
+    });
+    $("rankPrevPage").addEventListener("click", () => { state.rankPage--; renderRankList(); });
+    $("rankNextPage").addEventListener("click", () => { state.rankPage++; renderRankList(); });
+    $("rankRefreshBtn").addEventListener("click", triggerCrawl);
     $("inputFeeRate").addEventListener("input", event => {
-      const value = Number(event.target.value);
-      if (Number.isFinite(value) && value >= 0 && value <= 0.02) { state.feeRate = value; scheduleFeeRefresh(); }
+      updateCostInput(event.target, "feeRate", 0.02, "基础费率");
     });
     $("inputRebateRate").addEventListener("input", event => {
-      const value = Number(event.target.value);
-      if (Number.isFinite(value) && value >= 0 && value <= 1) { state.rebateRate = value; scheduleFeeRefresh(); }
+      updateCostInput(event.target, "rebateRate", 1, "返佣比例");
     });
     $("refreshBtn").addEventListener("click", async () => {
-      await Promise.all([loadBnbPrice(), loadSchedulerStatus(), loadCurrentCampaignDetails({ force: true })]);
+      await Promise.all([loadBnbPrice(), loadSchedulerStatus(), refreshCampaigns({ force: true })]);
       triggerCardsHighlight();
     });
     $("autoUpdateToggle").addEventListener("change", async event => {
@@ -810,9 +1007,7 @@
       setInterval(renderCountdown, 1000);
       setInterval(async () => {
         if (document.hidden || state.detailLoading) return;
-        const tasks = [loadBnbPrice(), loadSchedulerStatus()];
-        if (state.currentCampaign?.status !== "history") tasks.push(loadCurrentCampaignDetails());
-        await Promise.all(tasks);
+        await Promise.all([loadBnbPrice(), loadSchedulerStatus(), refreshCampaigns()]);
       }, 15000);
     } catch (error) {
       setDetailStatus(`初始化失败：${error.message}`, "error");

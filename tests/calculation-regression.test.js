@@ -161,9 +161,9 @@ function frontend() {
   const elements = {};
   let exported;
   const context = { Blob, setTimeout() {}, URL: { createObjectURL(blob) { exported = blob; return "blob:fixture"; }, revokeObjectURL() {} },
-    document: { getElementById(id) { return elements[id] ||= { textContent: "", innerHTML: "", style: {} }; }, createElement() { return { click() {} }; } } };
+    document: { getElementById(id) { return elements[id] ||= { textContent: "", innerHTML: "", style: {}, classList: { toggle() {} }, querySelectorAll: () => [] }; }, createElement() { return { click() {} }; } } };
   const original = fs.readFileSync(path.join(__dirname, "../public/app.js"), "utf8");
-  const source = original.replace("  init();\n})();", "  globalThis.audit = { state, renderSummaryCards, renderTiers, renderRankingAndRoi, renderHistory, exportAnalysisCsv, sparkline };\n})();");
+  const source = original.replace("  init();\n})();", "  globalThis.audit = { state, renderSummaryCards, renderRankings, renderRankingAndRoi, renderHistory, exportAnalysisCsv, sparkline };\n})();");
   assert.notEqual(source, original);
   vm.runInNewContext(source, context);
   const ui = context.audit;
@@ -178,10 +178,10 @@ test("实际前端：缺失门槛与历史值显示未知，曲线不将 null �
   const { ui, elements } = frontend();
   ui.state.rankingData = metrics(campaign, { ...snapshot, eligibleUserCount: 500, cutoff1000Volume: null, tierThresholds: {} });
   ui.state.historyData = [{ eligibleTradingVolume: 1, otherEligibleTradingVolume: 1, cutoff1000Volume: null }];
-  ui.renderSummaryCards(); ui.renderTiers(); ui.renderHistory();
+  ui.renderSummaryCards(); ui.renderRankings(); ui.renderHistory();
   assert.equal(elements.summaryCutoffVolume.textContent, "人数未达到门槛");
-  assert.doesNotMatch(elements.tierGrid.innerHTML, /<strong>\$0/);
-  assert.match(elements.tierGrid.innerHTML, /等待排行榜/);
+  assert.doesNotMatch(elements.rankSummaryGrid.innerHTML, /<strong>\$0/);
+  assert.match(elements.rankSummaryGrid.innerHTML, /等待排行榜/);
   assert.match(elements.trendGrid.innerHTML, /\$—/);
   const chart = ui.sparkline([100, null, 200], "#fff");
   assert.equal((chart.match(/M/g) || []).length, 2);
@@ -222,8 +222,8 @@ test("实际前端：混币总奖池及额外奖励按币种估值，未知价�
   assert.match(elements.summaryRewardUsdt.textContent, /不可用/);
   ui.state.currentCampaign = { ...campaign, bonusRewards: [{ ...campaign.bonusRewards[0], rewardToken: "USDC" }] };
   ui.state.rankingData.rewardPricesUsdt.USDC = 1;
-  ui.renderTiers();
-  assert.match(elements.tierGrid.innerHTML, /\$80\.00 USDT/);
+  ui.renderRankings();
+  assert.match(elements.rankSummaryGrid.innerHTML, /\$80\.00 USDT/);
 });
 
 test("实际前端：跨排名边界清空旧 ROI；CSV 包含状态、费率与独立奖励", async () => {
@@ -233,8 +233,8 @@ test("实际前端：跨排名边界清空旧 ROI；CSV 包含状态、费率与
   ui.state.rankingData = metrics(campaign, { ...snapshot, cutoff1000Volume: 1020.89628 });
   ui.renderRankingAndRoi();
   assert.equal(elements.netProfitPer10k.textContent, "—");
-  assert.match(elements.rewardPer10kUsdt.textContent, /阶梯奖励/);
-  assert.match(elements.roiFormulaNote.textContent, /阶梯奖励/);
+  assert.match(elements.rewardPer10kUsdt.textContent, /排名明细/);
+  assert.match(elements.roiFormulaNote.textContent, /排名明细/);
   ui.exportAnalysisCsv();
   const csv = await exported().text();
   assert.match(csv, /每10000U估算状态.*排名奖励门槛/);
@@ -249,4 +249,25 @@ test("净收益先减未舍入奖励再显示，不因中间取整损失一美�
   ui.state.marketData.markets[0].totalCostPer10k = 36.216;
   ui.renderRankingAndRoi();
   assert.match(elements.netProfitPer10k.textContent, /^\+\$0\.01/);
+});
+
+test("待核对规则的CSV不会导出确定的排名奖励与估值", async () => {
+  const { ui, exported } = frontend();
+  ui.state.currentCampaign = { ...campaign, needsReview: true };
+  ui.state.rankingData = metrics(ui.state.currentCampaign);
+  ui.exportAnalysisCsv();
+  const csv = await exported().text();
+  assert.match(csv, /"第 1 名",[^\n]*"规则待核对","N\/A"/);
+  assert.doesNotMatch(csv, /"第 1 名",[^\n]*"12 BNB"/);
+});
+
+test("费率输入无效时CSV成本和利润保持未知，不使用后台旧行情", async () => {
+  const { ui, exported } = frontend();
+  ui.state.costInputValidity.feeRate = false;
+  ui.state.rankingData.rankEntries = [{ rank: 1, volume: 1000, rewardAmount: 1, rewardToken: "USDT", rewardUsdt: 1 }];
+  ui.exportAnalysisCsv();
+  const csv = await exported().text();
+  assert.match(csv, /"基础费率","N\/A"/);
+  assert.match(csv, /"1","1000","N\/A","1 USDT","1","N\/A","N\/A"/);
+  assert.match(csv, /"万U净收益\(USDT\)","N\/A"/);
 });
