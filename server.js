@@ -13,12 +13,13 @@ const { CrawlerScheduler, crawlLeaderboard, campaignPatchFromSnapshot } = requir
 const APP_VERSION = require("./package.json").version;
 const { runtimeIdentity, createPageLifetime } = require("./lib/desktop");
 const identity = runtimeIdentity();
-const desktopMode = process.env.EVENTLENS_DESKTOP === "1";
+const serverMode = process.argv.includes("--server") || process.env.EVENTLENS_SERVER === "1";
+const desktopMode = !serverMode && process.env.EVENTLENS_DESKTOP === "1";
 let pageLifetime;
 let requestShutdown;
 
 const PORT = Number(process.env.PORT) || 3000;
-const HOST = "127.0.0.1";
+const HOST = serverMode ? "0.0.0.0" : "127.0.0.1";
 const PUBLIC_DIR = path.resolve(__dirname, "public");
 const schedulerIntervalMinutes = Math.max(5, Number.parseInt(process.env.CRAWL_INTERVAL_MINUTES || "30", 10) || 30);
 const scheduler = new CrawlerScheduler(schedulerIntervalMinutes * 60 * 1000);
@@ -90,29 +91,29 @@ function isLocalHostHeader(host = "") {
   return /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(normalized);
 }
 
-function isAllowedOrigin(origin, hostHeader) {
+function isAllowedOrigin(origin, hostHeader, remoteAccess = false) {
   if (!origin) return true;
   try {
     const parsed = new URL(origin);
     const expectedHost = String(hostHeader || "").trim().toLowerCase();
-    return parsed.protocol === "http:" &&
-      ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname) &&
+    return (remoteAccess ? ["http:", "https:"].includes(parsed.protocol) : parsed.protocol === "http:") &&
+      (remoteAccess || ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname)) &&
       parsed.host.toLowerCase() === expectedHost;
   } catch (_) {
     return false;
   }
 }
 
-function requireLocalRequest(req, res) {
-  if (!isLoopbackAddress(req.socket.remoteAddress) || !isLocalHostHeader(req.headers.host)) {
+function requireLocalRequest(req, res, remoteAccess = false) {
+  if (!remoteAccess && (!isLoopbackAddress(req.socket.remoteAddress) || !isLocalHostHeader(req.headers.host))) {
     sendError(res, 403, "仅允许本机访问");
     return false;
   }
   return true;
 }
 
-function requireMutationAccess(req, res) {
-  if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
+function requireMutationAccess(req, res, remoteAccess = false) {
+  if (!isAllowedOrigin(req.headers.origin, req.headers.host, remoteAccess)) {
     sendError(res, 403, "拒绝跨站写操作");
     return false;
   }
@@ -124,6 +125,22 @@ function requireMutationAccess(req, res) {
     return false;
   }
   return true;
+}
+
+function requireAccessPassword(req, res, password, username) {
+  if (!password) return true;
+  const authorization = String(req.headers.authorization || "");
+  const match = authorization.match(/^Basic ([A-Za-z0-9+/]+={0,2})$/i);
+  const supplied = match ? Buffer.from(match[1], "base64") : Buffer.alloc(0);
+  const expected = Buffer.from(`${username}:${password}`);
+  if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) return true;
+  res.writeHead(401, {
+    ...securityHeaders(),
+    "Cache-Control": "no-store",
+    "WWW-Authenticate": 'Basic realm="EventLens", charset="UTF-8"'
+  });
+  res.end(JSON.stringify({ error: "请输入访问用户名和密码" }));
+  return false;
 }
 
 async function parseBody(req) {
@@ -179,21 +196,28 @@ function requiresExactSubTrack(campaign) {
   }
 }
 
-function createServer() {
+function createServer({
+  remoteAccess = serverMode,
+  accessPassword = process.env.EVENTLENS_ACCESS_PASSWORD || "",
+  accessUsername = process.env.EVENTLENS_ACCESS_USERNAME || "eventlens"
+} = {}) {
   return http.createServer(async (req, res) => {
-    if (!requireLocalRequest(req, res)) return;
+    if (!requireLocalRequest(req, res, remoteAccess)) return;
+    if (!requireAccessPassword(req, res, accessPassword, accessUsername)) return;
 
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname || "/";
     const query = parsedUrl.query;
 
+    if (remoteAccess && pathname.startsWith("/api/desktop/")) return sendError(res, 404, "服务器模式不提供桌面生命周期接口");
+
     if (req.method === "OPTIONS") {
-      if (!isAllowedOrigin(req.headers.origin, req.headers.host)) return sendError(res, 403, "拒绝跨站请求");
+      if (!isAllowedOrigin(req.headers.origin, req.headers.host, remoteAccess)) return sendError(res, 403, "拒绝跨站请求");
       res.writeHead(204, securityHeaders());
       return res.end();
     }
 
-    if (MUTATION_PATHS.has(pathname) && !requireMutationAccess(req, res)) return;
+    if (MUTATION_PATHS.has(pathname) && !requireMutationAccess(req, res, remoteAccess)) return;
 
     try {
       if (pathname === "/api/health" && req.method === "GET") {
@@ -201,7 +225,7 @@ function createServer() {
       }
 
       if (pathname === "/api/session" && req.method === "GET") {
-        return sendJson(res, 200, { token: sessionToken, desktop: desktopMode });
+        return sendJson(res, 200, { token: sessionToken, desktop: !remoteAccess && desktopMode });
       }
 
       if (pathname === "/api/desktop/page" && req.method === "GET") {
@@ -465,10 +489,10 @@ if (require.main === module) {
     if (settings.autoUpdateEnabled) scheduler.start();
     server.listen(PORT, HOST, () => {
       console.log("\n======================================================");
-      console.log("  EventLens 本地交易赛分析服务已启动");
-      console.log(`  访问地址: http://${HOST}:${PORT}`);
+      console.log(`  EventLens ${serverMode ? "服务器" : "本地"}交易赛分析服务已启动`);
+      console.log(serverMode ? `  访问地址: http://<服务器IP>:${PORT}` : `  访问地址: http://${HOST}:${PORT}`);
       console.log(`  排行榜自动更新: ${settings.autoUpdateEnabled ? `每 ${schedulerIntervalMinutes} 分钟` : "已关闭（仅手动）"}`);
-      console.log("  服务仅监听本机回环地址，不接受局域网或公网访问");
+      console.log(serverMode ? `  已开放远程访问；访问密码${process.env.EVENTLENS_ACCESS_PASSWORD ? "已设置" : "未设置"}` : "  服务仅监听本机回环地址，不接受局域网或公网访问");
       console.log("======================================================\n");
     });
   })().catch(error => {

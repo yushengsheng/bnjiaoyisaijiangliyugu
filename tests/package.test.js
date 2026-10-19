@@ -26,6 +26,8 @@ test("Release ZIP 可生成、解压并从种子数据首次启动", () => {
   assert.match(listing, /Open-EventLens\.command/);
   assert.match(listing, /\.app\/Contents\/MacOS\/EventLens/);
   assert.match(listing, /scripts\/launch-desktop\.js/);
+  assert.match(listing, /install-linux\.sh/);
+  assert.match(listing, /LINUX-/);
   assert.doesNotMatch(listing, /manifest\.json|background\.js|data\/campaigns\.json/);
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "eventlens-package-"));

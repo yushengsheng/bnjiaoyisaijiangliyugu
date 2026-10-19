@@ -1,6 +1,6 @@
 # EventLens Local
 
-本地运行的币安交易赛排行榜、奖励和买卖价差分析工具。页面风格参考 EventLens，但所有活动配置、排行榜快照和历史记录均保存在当前电脑，不需要浏览器扩展，也不会开放局域网或公网服务。
+币安交易赛排行榜、奖励和买卖价差分析工具。默认在本地运行，也支持部署到 Linux 服务器，通过 IP 和端口访问。活动配置、排行榜快照和历史记录保存在运行程序的电脑或服务器上，不需要浏览器扩展。
 
 ## 功能
 
@@ -13,6 +13,8 @@
 - 保存最近 500 次成功快照，用于本地趋势和 CSV 导出。
 - 可勾选开启或关闭每 30 分钟排行榜自动更新；关闭后保留手动更新，选择会保存到本机并在下次启动时恢复。
 - 自动区分源数据时间、本地采集时间和最近检查时间。
+- 公告列表和详情统一从 `www.bsmkweb.cc` 获取，跟随导航网站的重定向，不维护固定备用公告域名。公告入口：<https://www.bsmkweb.cc/zh-CN/support/announcement/list/93>。
+- 每次抓榜先通过同一导航入口适配当前可用域名，再打开原活动和具体子赛道；已有监控中的旧域名失效也无需手动替换，不再尝试固定旧镜像。
 
 > 排行榜自身的更新频率由币安决定。程序每 30 分钟检查一次，不代表币安排行榜每 30 分钟变化。
 >
@@ -22,7 +24,7 @@
 
 - Node.js 22 或更高版本
 - Brave Browser 或 Google Chrome
-- macOS、Windows 或常见 Linux 桌面系统
+- macOS、Windows 或常见 Linux 系统；Linux 服务器无需图形桌面，抓榜使用无界面浏览器
 
 项目不依赖第三方 npm 包，无需运行 `npm install`。
 
@@ -68,7 +70,72 @@ node server.js
 http://127.0.0.1:3000
 ```
 
-服务强制监听 `127.0.0.1`，不会接受局域网或公网连接。
+以上本地启动方式仅监听 `127.0.0.1`，不会接受局域网或公网连接。
+
+### Linux 服务器（IP + 端口访问）
+
+推荐使用一键安装包，上传服务器后执行：
+
+```bash
+sudo bash EventLens-Linux-v2.1.2.run 你的服务器公网IPv4 3000 网页用户名
+```
+
+随后隐藏输入网页密码；也支持在用户名后增加第四个参数作为密码。脚本自动准备运行环境、浏览器和开机启动，安装成功后通过 `http://你的服务器公网IPv4:3000` 访问。完整上传、安装、端口放行和排错步骤见 [Linux 小白安装教程](LINUX-安装教程.md)。安装包由 `npm run package:linux` 生成，使用本地完整源码，不依赖 GitHub 上是否已同步。
+
+以下是保留的手动启动与部署方式：
+
+在服务器安装 Node.js 22+ 和 Chrome、Brave 或 Chromium，以普通用户进入项目目录运行：
+
+```bash
+PORT=3000 npm run start:server
+```
+
+也可使用 `PORT=3000 node server.js --server`，或设置 `EVENTLENS_SERVER=1` 后运行 `node server.js`。服务器模式监听 `0.0.0.0`；放行服务器防火墙和云安全组对应的 TCP 端口后，在其他电脑打开 `http://<服务器IP>:3000`。
+
+服务器模式下，关闭网页不会停止服务，桌面自动退出接口也不会启用。原有自动更新开关、采集并发和数据保存规则保持不变。浏览器采集应以普通用户运行，避免 Chromium 拒绝 root 用户启动。
+
+可选设置页面访问密码，用户名默认 `eventlens`，也可通过 `EVENTLENS_ACCESS_USERNAME` 自定义。在 Bash 中输入密码，不把密码写进命令历史：
+
+```bash
+read -rsp '设置页面访问密码：' EVENTLENS_ACCESS_PASSWORD
+printf '\n'
+export EVENTLENS_ACCESS_PASSWORD
+export EVENTLENS_ACCESS_USERNAME=webadmin
+PORT=3000 npm run start:server
+```
+
+密码保护覆盖页面、静态资源和全部 API。不设置时，能连接该端口的人可直接使用页面。公网密码访问请通过 HTTPS 反向代理，避免 HTTP 明文传输。
+
+手动部署需要开机启动和进程退出后自动重启时，可使用 systemd。一键安装包已自动完成此配置，其实际路径见安装教程；以下为手动部署示例，假定项目在 `/opt/eventlens`，已创建普通用户 `eventlens`，该用户对 `data/` 有写权限，Node 位于 `/usr/bin/node`：
+
+```ini
+# /etc/systemd/system/eventlens.service
+[Unit]
+Description=EventLens
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eventlens
+WorkingDirectory=/opt/eventlens
+ExecStart=/usr/bin/node /opt/eventlens/server.js --server
+Environment=PORT=3000
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/eventlens.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+如需密码，将 `EVENTLENS_ACCESS_PASSWORD` 保存在仅管理员可读取的 `/etc/eventlens.env` 中。保存服务文件后启用：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now eventlens
+```
 
 ## 数据位置
 
@@ -80,6 +147,8 @@ data/snapshots.json
 data/snapshot-history.json
 data/settings.json
 ```
+
+一键安装包使用 `/var/lib/eventlens` 保存这些运行数据，网页账号配置保存在 `/etc/eventlens/eventlens.env`，仅管理员可读。
 
 首次启动时会从以下种子文件建立运行数据：
 
@@ -120,10 +189,10 @@ JSON 写入采用串行队列、临时文件和原子替换。发现 JSON 损坏
 
 ## 安全设计
 
-- 仅允许回环地址访问。
-- 所有添加、删除、写快照和触发爬虫操作都需要当前页面的随机本地会话令牌。
+- 默认仅允许回环地址访问，显式开启服务器模式后允许远程访问，可配置访问密码。
+- 所有添加、删除、写快照和触发爬虫操作都需要当前页面的随机会话令牌。
 - 拒绝跨站写操作。
-- 支持 HTTPS 公网域名下的交易赛活动链接，包括新镜像和自定义域名；保留输入域名，失败时按原活动路径尝试备用主机。
+- 支持 HTTPS 公网域名下的交易赛活动链接，保存原始录入链接；抓榜时通过 `www.bsmkweb.cc` 动态适配域名，保留原活动路径和子赛道，并校验动态目标的公网地址。
 - 拒绝本机、内网、IP 地址、带登录信息和异常端口的活动链接；启动抓榜前校验域名解析结果。规则仍从币安公告按活动 ID 匹配，未知规则标为待核对。
 - 静态文件访问被限制在 `public/` 目录内。
 - 不读取币安账户、API Key、钱包、登录凭据或私人交易记录。

@@ -1,9 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const api = require("../lib/binance-api");
+const navigation = require("../lib/binance-navigation");
 
 const originalFetch = global.fetch;
-test.afterEach(() => { global.fetch = originalFetch; });
+const originalNavigation = navigation.requestJson;
+test.afterEach(() => { global.fetch = originalFetch; navigation.requestJson = originalNavigation; });
 
 function jsonResponse(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -49,4 +51,69 @@ test("批量盘口失败后以有限并发回退并保留每个交易对状态",
   assert.equal(result[0].ok, true);
   assert.equal(result[1].ok, false);
   assert.match(result[1].error, /HTTP 400/);
+});
+
+function freshApi() {
+  delete require.cache[require.resolve("../lib/binance-api")];
+  return require("../lib/binance-api");
+}
+
+test("公告列表和详情统一从 bsmkweb.cc 发起并允许 HTTP 重定向", async () => {
+  const requests = [];
+  const code = "a".repeat(32);
+  const originalBases = process.env.BINANCE_CMS_BASES;
+  process.env.BINANCE_CMS_BASES = "https://obsolete.example/cms";
+  try {
+    const announcements = freshApi();
+    global.fetch = async (url, options) => {
+      const parsed = new URL(url);
+      requests.push(parsed);
+      assert.equal(parsed.origin, "https://www.bsmkweb.cc");
+      assert.equal(options.redirect, "follow");
+      assert.equal(options.headers.Referer, navigation.LIST_URL);
+      return jsonResponse({ code: "000000", data: parsed.pathname.includes("detail") ? { code, title: "测试公告" } : { articles: [{ code }] } });
+    };
+    assert.deepEqual(await announcements.getAnnouncementList(), [{ code }]);
+    assert.equal((await announcements.getAnnouncementDetail(code)).code, code);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].searchParams.get("catalogId"), "93");
+  } finally {
+    if (originalBases === undefined) delete process.env.BINANCE_CMS_BASES;
+    else process.env.BINANCE_CMS_BASES = originalBases;
+  }
+});
+
+test("公告 HTML 导航使用浏览器跳转结果，缓存目标后读取详情，不回退固定镜像", async () => {
+  const announcements = freshApi();
+  const code = "b".repeat(32);
+  const requests = [];
+  let navigations = 0;
+  global.fetch = async url => {
+    const parsed = new URL(url);
+    requests.push(parsed.hostname);
+    if (parsed.hostname === "www.bsmkweb.cc") return new Response("<script>location.replace(...)</script>", { headers: { "Content-Type": "text/html" } });
+    assert.equal(parsed.hostname, "current.example");
+    return jsonResponse({ code: "000000", data: { code, title: "测试详情" } });
+  };
+  navigation.requestJson = async pathname => {
+    navigations++;
+    assert.match(pathname, /catalog\/list\/query/);
+    return { origin: "https://current.example", data: { code: "000000", data: { articles: [{ code }] } } };
+  };
+  assert.deepEqual(await announcements.getAnnouncementList(), [{ code }]);
+  assert.equal((await announcements.getAnnouncementDetail(code)).title, "测试详情");
+  assert.equal(navigations, 1);
+  assert.deepEqual([...new Set(requests)], ["www.bsmkweb.cc", "current.example"]);
+});
+
+test("公告导航失败明确报错，后续请求可以重新导航", async () => {
+  const announcements = freshApi();
+  global.fetch = async url => {
+    assert.equal(new URL(url).hostname, "www.bsmkweb.cc");
+    return new Response("Loading", { headers: { "Content-Type": "text/html" } });
+  };
+  navigation.requestJson = async () => { throw new Error("bsmkweb.cc 公告导航不可用"); };
+  await assert.rejects(announcements.getAnnouncementList(), /公告导航不可用/);
+  navigation.requestJson = async () => ({ origin: "https://current.example", data: { code: "000000", data: { articles: [] } } });
+  assert.deepEqual(await announcements.getAnnouncementList(), []);
 });

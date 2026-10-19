@@ -3,15 +3,16 @@ const assert = require("node:assert/strict");
 const { buildExactSnapshot, parseVolume, toMicros, findSourceUpdatedAt, PAGE_LOAD_ATTEMPTS, getRequestedSubTrack, findConfiguredResourceId, extractEligiblePairsFromPageText, campaignPatchFromSnapshot, findCampaignForImmediate } = require("../lib/crawler");
 const { mockPage } = require("./helpers");
 
-test("优先输入域名，备用主机不改变活动与子赛道，也不重复抓同一URL", () => {
+test("新旧活动链接统一使用 bsmkweb.cc 导航，活动及子赛道路径不变", () => {
   const { getLeaderboardUrls } = require("../lib/crawler");
   const pathname = "/zh-CN/activity/trading-competition/202609tradersleague4/Spot-Carnival-Waves-Round2";
   assert.deepEqual(getLeaderboardUrls(`https://www.cagxfucoftt.com${pathname}?utm_source=test`), [
-    `https://www.cagxfucoftt.com${pathname}`, `https://www.binance.com${pathname}`, `https://www.icnguxncf.com${pathname}`
+    `https://www.bsmkweb.cc${pathname}`
   ]);
   assert.deepEqual(getLeaderboardUrls(`https://www.icnguxncf.com${pathname}`), [
-    `https://www.icnguxncf.com${pathname}`, `https://www.binance.com${pathname}`
+    `https://www.bsmkweb.cc${pathname}`
   ]);
+  assert.deepEqual(getLeaderboardUrls(`https://www.bsmkweb.cc${pathname}`), [`https://www.bsmkweb.cc${pathname}`]);
 });
 
 test("活动页在放弃前会自动加载或刷新三次", () => {
