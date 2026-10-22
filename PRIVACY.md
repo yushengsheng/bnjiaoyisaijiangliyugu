@@ -7,6 +7,8 @@ EventLens Local 默认在本地运行，也支持显式开启服务器模式。
 - 程序仅访问币安公开公告、公开排行榜和公开行情接口。公告与抓榜域名统一经 `www.bsmkweb.cc` 导航适配，并跟随网站重定向。
 - 程序不要求用户登录，不读取或保存币安 Cookie、API Key、资产、订单、钱包私钥或助记词。
 - 最新快照保存聚合统计及前 1000 名的匿名排名、交易量和并列标记，供榜单与奖励展示；不保存参与者昵称、用户 ID 或报名标识。完整参与者记录只在本次采集的内存中用于校验和汇总；历史趋势仅保存汇总，不重复保存排名明细。
+- 神算子直接访问公开接口，仅保存赛季、周次、奖励档位及末位积分到 `data/prophet.json`；逐名积分按需读取，不保存参与者身份或完整榜单。
 - 用户可以通过页面删除活动及其本地快照，也可以停止程序后手动删除 `data/campaigns.json`、`data/snapshots.json` 和 `data/snapshot-history.json`。
+- Linux 升级备份只保留在服务器本机程序目录的 `backups` 下，其中包含原网页配置，仅管理员可读，请勿上传或公开。
 
-项目地址：https://github.com/yushengsheng/Trading-Volume-bn
+项目地址：https://github.com/yushengsheng/bnjiaoyisaijiangliyugu

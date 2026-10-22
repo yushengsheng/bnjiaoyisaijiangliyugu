@@ -11,6 +11,14 @@ SERVICE_USER=eventlens
 INSTALL_TEMP=
 INSTALL_COMPLETE=0
 OWN_SERVICE=0
+UPGRADE_MODE=0
+UPGRADE_COMPLETE=0
+UPGRADE_STOPPED=0
+UPGRADE_WAS_ACTIVE=0
+UPGRADE_BACKUP=
+UPGRADE_STAGE=
+UPGRADE_HELPER=
+UPGRADE_OLD_VERSION=
 
 say() { printf '%s\n' "$*"; }
 fail() { printf '安装失败：%s\n' "$*" >&2; return 1; }
@@ -24,6 +32,8 @@ usage() {
 省略密码时会隐藏输入，并要求再输入一次确认。
 用户名和密码用于访问网页，与服务器登录账号无关。
 --check 仅检查参数，不安装；--help 显示说明。
+已用一键安装包安装的服务器：sudo bash EventLens-Linux-v*.run --upgrade
+升级保留原端口、网页账号、运行数据和自动更新设置，不需要重新输入这些参数。
 
 支持：Ubuntu 22.04+、Debian 12+、Rocky/AlmaLinux/RHEL 9+、Fedora 40+。
 要求：x86_64（amd64）架构、systemd、root 或 sudo 权限、可下载运行环境的网络。
@@ -108,12 +118,100 @@ check_existing_install() {
 cleanup() {
   local status=$?
   trap - EXIT
+  if (( UPGRADE_MODE == 1 && UPGRADE_COMPLETE == 0 && UPGRADE_STOPPED == 1 )); then
+    local restored=1
+    systemctl stop eventlens.service >/dev/null 2>&1 || true
+    if [[ -n "$UPGRADE_BACKUP" && -d "$UPGRADE_BACKUP/app" ]]; then
+      if [[ -d "$APP_ROOT/app" ]]; then mv "$APP_ROOT/app" "$UPGRADE_BACKUP/failed-app" || true; fi
+      if ! mv "$UPGRADE_BACKUP/app" "$APP_ROOT/app"; then
+        restored=0
+        printf '%s\n' '旧程序自动恢复失败，请使用本机升级备份恢复。' >&2
+      fi
+    fi
+    if (( UPGRADE_WAS_ACTIVE == 1 )); then
+      if (( restored == 1 )) && systemctl start eventlens.service >/dev/null 2>&1 &&
+          "$NODE_BIN" "$UPGRADE_HELPER" health "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR/eventlens.env" "$UPGRADE_OLD_VERSION" >/dev/null 2>&1; then
+        printf '%s\n' '升级失败，已恢复旧程序；原数据、配置和端口未被覆盖。' >&2
+      else
+        printf '%s\n' '升级失败，旧程序已保留；服务未恢复运行，请在本机检查服务状态。' >&2
+      fi
+    fi
+  fi
   if (( status != 0 && OWN_SERVICE == 1 && INSTALL_COMPLETE == 0 )); then
     systemctl disable --now eventlens.service >/dev/null 2>&1 || true
   fi
   unset WEB_PASSWORD
+  [[ -z "$UPGRADE_STAGE" ]] || rm -rf -- "$UPGRADE_STAGE"
   [[ -z "$INSTALL_TEMP" ]] || rm -rf -- "$INSTALL_TEMP"
   exit "$status"
+}
+
+upgrade_preflight() {
+  [[ $EUID -eq 0 ]] || { fail '升级需要 root 或 sudo 权限。'; return 1; }
+  [[ -f "$APP_ROOT/.eventlens-installed" ]] || { fail '未检测到原一键安装记录，请勿使用升级模式覆盖手动部署。'; return 1; }
+  NODE_BIN="$APP_ROOT/runtime/node/bin/node"
+  [[ -x "$NODE_BIN" && -f "$EVENTLENS_SOURCE/lib/linux-upgrade.js" ]] || { fail '原运行环境或升级包不完整。'; return 1; }
+  "$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-install "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR" "$UNIT_FILE" || return 1
+  local fragment dropins
+  fragment=$(systemctl show -p FragmentPath --value eventlens.service) || return 1
+  dropins=$(systemctl show -p DropInPaths --value eventlens.service) || return 1
+  [[ "$fragment" == "$UNIT_FILE" && -z "$dropins" ]] || { fail '服务存在额外覆盖配置或归属不符，未执行升级。'; return 1; }
+}
+
+upgrade_application() {
+  local version
+  say '1/4 校验原安装与新版程序…'
+  upgrade_preflight || return 1
+  version=$("$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-source "$EVENTLENS_SOURCE") || return 1
+  UPGRADE_OLD_VERSION=$("$NODE_BIN" -p 'require(process.argv[1]).version' "$APP_ROOT/app/package.json") || return 1
+  [[ "$UPGRADE_OLD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { fail '原程序版本无法识别。'; return 1; }
+  UPGRADE_STAGE=$(mktemp -d "$APP_ROOT/.upgrade-stage.XXXXXX") || return 1
+  install -d -m 755 "$UPGRADE_STAGE/app" "$UPGRADE_STAGE/app/lib" "$UPGRADE_STAGE/app/public" "$UPGRADE_STAGE/app/data" || return 1
+  install -m 644 "$EVENTLENS_SOURCE/server.js" "$EVENTLENS_SOURCE/package.json" "$UPGRADE_STAGE/app/" || return 1
+  install -m 644 "$EVENTLENS_SOURCE"/lib/*.js "$UPGRADE_STAGE/app/lib/" || return 1
+  install -m 644 "$EVENTLENS_SOURCE"/public/* "$UPGRADE_STAGE/app/public/" || return 1
+  install -m 644 "$EVENTLENS_SOURCE/data/seed-campaigns.json" "$EVENTLENS_SOURCE/data/seed-snapshots.json" "$UPGRADE_STAGE/app/data/" || return 1
+  # 校验器留在安装临时目录，不依赖即将切换或回滚的 app 路径。
+  install -m 600 "$EVENTLENS_SOURCE/lib/linux-upgrade.js" "$INSTALL_TEMP/upgrade-helper.cjs" || return 1
+  local helper="$INSTALL_TEMP/upgrade-helper.cjs"
+  UPGRADE_HELPER=$helper
+  say '2/4 停止服务并备份原程序、数据与配置…'
+  if systemctl is-active --quiet eventlens.service; then UPGRADE_WAS_ACTIVE=1; fi
+  UPGRADE_STOPPED=1
+  systemctl stop eventlens.service || return 1
+  install -d -m 700 "$APP_ROOT/backups" || return 1
+  UPGRADE_BACKUP=$(mktemp -d "$APP_ROOT/backups/upgrade-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || return 1
+  "$NODE_BIN" "$helper" snapshot "$DATA_DIR" "$CONFIG_DIR/eventlens.env" "$UNIT_FILE" "$UPGRADE_BACKUP/state.json" || return 1
+  tar -czpf "$UPGRADE_BACKUP/data.tar.gz" -C "$DATA_DIR" . || return 1
+  cp -p "$CONFIG_DIR/eventlens.env" "$UPGRADE_BACKUP/config.before" || return 1
+  cp -p "$UNIT_FILE" "$UPGRADE_BACKUP/service.before" || return 1
+  say '3/4 切换新版，保持原数据目录和服务配置…'
+  mv "$APP_ROOT/app" "$UPGRADE_BACKUP/app" || return 1
+  mv "$UPGRADE_STAGE/app" "$APP_ROOT/app" || return 1
+  "$NODE_BIN" "$helper" verify "$UPGRADE_BACKUP/state.json" || return 1
+  say '4/4 使用原端口及账号进行本机健康检查…'
+  systemctl start eventlens.service || return 1
+  "$NODE_BIN" "$helper" health "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR/eventlens.env" "$version" || return 1
+  "$NODE_BIN" "$helper" verify-config "$UPGRADE_BACKUP/state.json" || return 1
+  if (( UPGRADE_WAS_ACTIVE == 0 )); then systemctl stop eventlens.service || return 1; fi
+  UPGRADE_COMPLETE=1
+  say "升级成功：EventLens v$version。原端口、网页账号、数据及自动更新设置已保留。"
+  if (( UPGRADE_WAS_ACTIVE == 0 )); then say '服务原先处于停止状态，升级后仍保持停止。'; fi
+  say '旧程序与恢复备份保存在本机程序目录的 backups 下；升级不会删除旧备份。'
+}
+
+upgrade_main() {
+  UPGRADE_MODE=1
+  detect_platform || return 1
+  [[ $EUID -eq 0 ]] || { fail '请使用 root 或 sudo 升级。'; return 1; }
+  umask 077
+  INSTALL_TEMP=$(mktemp -d /tmp/eventlens-upgrade.XXXXXX) || return 1
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  exec 9>/run/lock/eventlens-install.lock
+  flock -n 9 || { fail '另一个安装或升级任务正在运行。'; return 1; }
+  upgrade_application
 }
 
 download() {
@@ -260,6 +358,10 @@ check_health() {
 
 main() {
   local check_only=0
+  if [[ ${1:-} == --upgrade ]]; then
+    [[ $# -eq 1 ]] || { fail '升级模式不需要 IP、端口或账号参数，将保留原配置。'; return 1; }
+    upgrade_main; return
+  fi
   if [[ ${1:-} == --help || ${1:-} == -h ]]; then usage; return; fi
   if [[ ${1:-} == --check ]]; then check_only=1; shift; fi
   if (( $# < 3 || $# > 4 )); then usage; return 1; fi

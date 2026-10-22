@@ -127,11 +127,13 @@ function campaignUI(groups) {
   const saved = new Map();
   const location = { hash: "", pathname: "/", search: "" };
   let currentGroups = groups;
+  const events = [];
   const context = {
     AbortController,
+    CustomEvent,
     setTimeout: () => 0,
     clearTimeout: () => {},
-    document: { getElementById: getElement },
+    document: { getElementById: getElement, dispatchEvent: event => events.push(event) },
     location,
     history: { replaceState: (_, __, url) => { location.hash = url.startsWith("#") ? url : ""; } },
     localStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) },
@@ -143,8 +145,53 @@ function campaignUI(groups) {
   };
   const source = app.replace("  init();\n})();", "  globalThis.ui = { state, selectCampaign, switchCampaignTab, refreshCampaigns, loadCampaigns, loadCurrentCampaignDetails, renderRankings, renderRankList, rankEstimate, updateCostInput };\n})();");
   vm.runInNewContext(source, context);
-  return { ...context.ui, element: getElement, location, saved, setGroups: next => { currentGroups = next; }, setFetch: next => { context.fetch = next; } };
+  return { ...context.ui, element: getElement, location, saved, events, setGroups: next => { currentGroups = next; }, setFetch: next => { context.fetch = next; } };
 }
+
+test("神算子与交易赛共用首页分类，到期移入已过期且不触发交易赛详情或自动抓榜", async () => {
+  const prophet = { id: "prophet:season", kind: "prophet", name: "神算子", status: "active" };
+  const ended = { id: "ended-trade", name: "过期交易赛", status: "history" };
+  let groups = { active: [prophet], history: [ended] };
+  const ui = campaignUI(groups);
+  const calls = [];
+  ui.setFetch(async url => {
+    calls.push(url);
+    return { ok: true, json: async () => url === "/api/campaigns" ? { groups } : { dataStatus: "unavailable", markets: [], entries: [], tiers: [] } };
+  });
+  await ui.loadCampaigns();
+  await ui.selectCampaign(prophet.id);
+  assert.equal(ui.element("prophetPanel").classList.contains("hidden"), false);
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), true);
+  assert.equal(ui.events.at(-1).type, "eventlens:prophet-open");
+  groups = { active: [], history: [{ ...prophet, status: "history" }, ended] };
+  await ui.refreshCampaigns();
+  assert.equal(ui.state.currentTab, "history");
+  assert.equal(ui.state.currentCampaign.status, "history");
+  assert.equal(ui.element("countActive").textContent, 0);
+  assert.equal(ui.element("countHistory").textContent, 2);
+  await ui.refreshCampaigns();
+  assert.ok(calls.every(url => url === "/api/campaigns"), "分类同步不得触发任何榜单采集或交易赛行情请求");
+  await ui.selectCampaign(ended.id);
+  assert.equal(ui.element("prophetPanel").classList.contains("hidden"), true);
+  assert.equal(ui.element("campaignDetails").classList.contains("hidden"), false);
+  assert.ok(calls.some(url => url.includes("/api/binance/ranking?campaignId=ended-trade")));
+});
+
+test("已过期交易赛平时只同步分类，用户手动刷新时才重新加载详情", async () => {
+  const ended = { id: "ended", name: "过期交易赛", status: "history" };
+  const ui = campaignUI({ active: [], history: [ended] });
+  await ui.loadCampaigns();
+  await ui.selectCampaign(ended.id);
+  const calls = [];
+  ui.setFetch(async url => {
+    calls.push(url);
+    return { ok: true, json: async () => url === "/api/campaigns" ? { groups: { active: [], history: [ended] } } : { dataStatus: "unavailable", markets: [], entries: [], tiers: [] } };
+  });
+  await ui.refreshCampaigns();
+  assert.deepEqual(calls, ["/api/campaigns"]);
+  await ui.refreshCampaigns({ force: true });
+  assert.equal(calls.filter(url => url.includes("/api/binance/ranking?")).length, 1);
+});
 
 test("进行中为空时隐藏历史活动详情，切回历史后仍能选择和查看", async () => {
   const ended = { id: "ended", name: "已结束联赛", status: "history" };

@@ -117,7 +117,7 @@ test("单文件 Linux 安装包自带完整源码并校验内容，篡改后拒�
   const tarFile = path.join(dir, "source.tar");
   fs.writeFileSync(tarFile, zlib.gunzipSync(payload));
   execFileSync("tar", ["-xf", tarFile, "-C", dir]);
-  for (const file of ["server.js", "lib/binance-navigation.js", "install-linux.sh", "LINUX-安装教程.md"]) {
+  for (const file of ["server.js", "lib/binance-navigation.js", "lib/prophet.js", "lib/linux-upgrade.js", "public/prophet.js", "public/prophet.css", "public/prophet.html", "public/index.html", "install-linux.sh", "upgrade-linux.sh", "LINUX-安装教程.md"]) {
     assert.equal(fs.readFileSync(path.join(dir, file)).equals(fs.readFileSync(path.join(root, file))), true, file);
   }
   assert.deepEqual(fs.readdirSync(path.join(dir, "data")).sort(), ["seed-campaigns.json", "seed-snapshots.json"]);

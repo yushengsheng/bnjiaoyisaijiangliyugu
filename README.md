@@ -2,9 +2,7 @@
 
 币安交易赛排行榜、奖励和买卖价差分析工具。默认在本地运行，也支持部署到 Linux 服务器，通过 IP 和端口访问。活动配置、排行榜快照和历史记录保存在运行程序的电脑或服务器上，不需要浏览器扩展。
 
-正式版下载：[EventLens Local v2.1.2](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.1.2)。下载 `EventLens-Local-v2.1.2.zip` 后解压，仍需安装 Node.js 22+；`SHA256SUMS` 用于核对下载文件。
-
-该已发布版本是历史归档，不会随当前源码自动更新。使用本次 Linux 一键安装和导航域名适配功能，请下载当前源码并按下方说明安装，或从当前源码重新构建安装包。
+正式版下载：[EventLens Local v2.2.0](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.2.0)。本地版下载 `EventLens-Local-v2.2.0.zip` 后解压，仍需 Node.js 22+；Linux 新安装和升级使用 `.run`。`SHA256SUMS` 用于核对发布文件，旧版归档保留。
 
 ## 功能
 
@@ -17,6 +15,8 @@
 - 行情不可用时明确显示不可用，不会生成假价格、假盘口或假排行榜。
 - 保存最近 500 次成功快照，用于本地趋势和 CSV 导出。
 - 可勾选开启或关闭每 30 分钟排行榜自动更新；关闭后保留手动更新，选择会保存到本机并在下次启动时恢复。
+- 神算子与交易赛共用原首页的活动列表，按赛季结束时间归入“已过期”。展示赛季及本周各奖励档位的末位积分与官方配置奖励，仅手动刷新；不会自动采集已过期项目。直接读取公开接口，无需浏览器或登录；定位校验失败时回退逐页采集，失败保留上次成功数据。
+- 神算子奖励名次可点击展开逐名积分，每页 50 条，支持前后翻页和单名次搜索。明细按需读取，不另存全榜或定时获取；积分保留官方精度，明细与门槛分别标记采集时间。
 - 自动区分源数据时间、本地采集时间和最近检查时间。
 - 公告列表和详情统一从 `www.bsmkweb.cc` 获取，跟随导航网站的重定向，不维护固定备用公告域名。公告入口：<https://www.bsmkweb.cc/zh-CN/support/announcement/list/93>。
 - 每次抓榜先通过同一导航入口适配当前可用域名，再打开原活动和具体子赛道；已有监控中的旧域名失效也无需手动替换，不再尝试固定旧镜像。
@@ -86,12 +86,20 @@ http://127.0.0.1:3000
 推荐使用一键安装包，上传服务器后执行：
 
 ```bash
-sudo bash EventLens-Linux-v2.1.2.run 你的服务器公网IPv4 3000 网页用户名
+sudo bash EventLens-Linux-v2.2.0.run 你的服务器公网IPv4 3000 网页用户名
 ```
 
 随后隐藏输入网页密码；也支持在用户名后增加第四个参数作为密码。脚本自动准备运行环境、浏览器和开机启动，安装成功后通过 `http://你的服务器公网IPv4:3000` 访问。完整上传、安装、端口放行和排错步骤见 [Linux 小白安装教程](LINUX-安装教程.md)。安装包由 `npm run package:linux` 生成，使用本地完整源码，不依赖 GitHub 上是否已同步。
 
 如果从 GitHub 下载了当前源码 ZIP，解压后进入包含 `install-linux.sh` 的项目目录，也可直接执行 `sudo bash install-linux.sh 你的服务器公网IPv4 3000 网页用户名`，无需预先安装 Node.js。
+
+**已有 `.run` 一键安装的服务器升级**（保留原端口，包括 38583、网页账号、活动、快照、趋势及自动更新设置）：
+
+```bash
+bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/download/v2.2.0/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
+```
+
+脚本固定下载 v2.2.0 并校验 SHA-256，再以 sudo 执行升级；不要重新填写安装参数。也可上传新版 `.run` 后执行 `sudo bash EventLens-Linux-v2.2.0.run --upgrade`。升级先备份、后切换程序，健康检查失败自动回滚旧程序，不重装 Node/浏览器，不改原配置或运行数据。只支持原一键安装器管理且未添加 systemd 覆盖文件的服务；手动部署请勿套用。备份保留在服务器本机程序目录的 `backups` 中，不自动删除。
 
 以下是保留的手动启动与部署方式：
 
@@ -150,6 +158,8 @@ sudo systemctl enable --now eventlens
 
 ## 数据位置
 
+发布样本中的“现货交易量锦标赛第三期”保留历史配置，但其奖励规则尚缺可复核的官方来源；不得将该条样本视为本次已核实的规则。其余样本也只代表标注时间的公开快照，不是未来奖励承诺。
+
 运行数据位于：
 
 ```text
@@ -157,6 +167,7 @@ data/campaigns.json
 data/snapshots.json
 data/snapshot-history.json
 data/settings.json
+data/prophet.json
 ```
 
 一键安装包使用 `/var/lib/eventlens` 保存这些运行数据，网页账号配置保存在 `/etc/eventlens/eventlens.env`，仅管理员可读。

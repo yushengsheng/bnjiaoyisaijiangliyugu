@@ -4,22 +4,29 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const { EventEmitter } = require("node:events");
 const parser = require("../lib/parser");
 
-function launchProbe(platform, exitCode = null) {
+function launchProbe(platform, exitCode = null, launchError = false) {
   const launches = [];
   const removedProfiles = [];
   const exitHandlers = new Set();
   let stops = 0;
   let endpointRequests = 0;
+  const endpointUrls = [];
+  const profileReads = [];
   const dependencies = {
     "node:child_process": {
       spawn(browser, args, options) {
         launches.push({ browser, args, options });
-        return { exitCode, kill() { stops++; return true; } };
+        const child = Object.assign(new EventEmitter(), { exitCode, kill() { stops++; return true; } });
+        if (launchError) queueMicrotask(() => child.emit("error", new Error("EACCES fixture")));
+        return child;
       }
     },
-    "node:fs": { existsSync: () => true, rmSync: profile => removedProfiles.push(profile) },
+    "node:fs": { existsSync: () => true, rmSync: profile => removedProfiles.push(profile),
+      mkdtempSync: prefix => prefix + "unique-probe",
+      readFileSync: file => { profileReads.push(file); return "45678\n/devtools/browser/fixture\n"; } },
     "node:os": { ...os, homedir: () => "/isolated-home" },
     "./storage": { getSnapshot: async () => null },
     "./parser": { ...parser, validateLeaderboardHost: async () => {} },
@@ -37,13 +44,16 @@ function launchProbe(platform, exitCode = null) {
     },
     setTimeout: callback => queueMicrotask(callback),
     WebSocket: class { constructor() { throw new Error("launch probe complete"); } },
-    fetch: async () => {
+    AbortSignal,
+    fetch: async url => {
       endpointRequests++;
+      endpointUrls.push(url);
       return { ok: true, json: async () => [{ type: "page", webSocketDebuggerUrl: "ws://127.0.0.1/probe" }] };
     },
     console: { warn() {} }
   }, { filename: "crawler.js" });
-  return { crawler: module.exports, launches, removedProfiles, exitHandlers, stops: () => stops, endpointRequests: () => endpointRequests };
+  return { crawler: module.exports, launches, removedProfiles, exitHandlers, endpointUrls, profileReads,
+    stops: () => stops, endpointRequests: () => endpointRequests };
 }
 
 for (const platform of ["darwin", "linux", "win32"]) {
@@ -58,6 +68,7 @@ for (const platform of ["darwin", "linux", "win32"]) {
       assert.equal(args.includes("--password-store=basic"), platform === "darwin");
       assert.ok(args.includes("--headless=new"));
       assert.ok(args.includes("--remote-debugging-address=127.0.0.1"));
+      assert.ok(args.includes("--remote-debugging-port=0"));
       const profile = args.find(arg => arg.startsWith("--user-data-dir="));
       assert.ok(profile);
       assert.ok(profile.startsWith(`--user-data-dir=${path.join(os.tmpdir(), "eventlens-crawler-24680-")}`));
@@ -67,6 +78,8 @@ for (const platform of ["darwin", "linux", "win32"]) {
     assert.equal(probe.stops(), probe.launches.length);
     assert.equal(probe.removedProfiles.length, probe.launches.length);
     assert.equal(probe.exitHandlers.size, 0);
+    assert.deepEqual(probe.endpointUrls, ["http://127.0.0.1:45678/json/list"]);
+    assert.equal(probe.profileReads[0], path.join(probe.removedProfiles[0], "DevToolsActivePort"));
   });
 }
 
@@ -78,6 +91,17 @@ test("浏览器启动失败仍回收临时子进程与资料目录", async () =>
   assert.equal(probe.endpointRequests(), 0);
   assert.equal(probe.stops(), probe.launches.length);
   assert.equal(probe.removedProfiles.length, probe.launches.length);
+  assert.equal(probe.exitHandlers.size, 0);
+});
+
+test("浏览器异步启动错误转为采集失败，不逸出事件或连接其他实例", async () => {
+  const probe = launchProbe("darwin", null, true);
+  await assert.rejects(probe.crawler.crawlLeaderboard(
+    "https://www.binance.com/activity/trading-competition/probe/Main-Reward"
+  ), /浏览器启动失败/);
+  assert.equal(probe.endpointRequests(), 0);
+  assert.equal(probe.stops(), 1);
+  assert.equal(probe.removedProfiles.length, 1);
   assert.equal(probe.exitHandlers.size, 0);
 });
 

@@ -14,7 +14,7 @@ cp "$ROOT/scripts/launch-desktop.js" "$STAGE/scripts/"
 cp "$ROOT/scripts/macos-launcher.m" "$ROOT/scripts/build-macos-launcher.sh" "$STAGE/scripts/"
 cp -R "$ROOT/双击打开.app" "$STAGE/双击打开.app"
 
-for file in server.js package.json README.md PRIVACY.md CHANGELOG.md LICENSE LINUX-安装教程.md install-linux.sh start.sh start.bat Open-EventLens.command 双击打开.command; do
+for file in server.js package.json README.md PRIVACY.md CHANGELOG.md LICENSE LINUX-安装教程.md install-linux.sh upgrade-linux.sh start.sh start.bat Open-EventLens.command 双击打开.command; do
   cp "$ROOT/$file" "$STAGE/$file"
 done
 cp "$ROOT"/lib/*.js "$STAGE/lib/"
@@ -45,6 +45,7 @@ Manual:
 The default service only listens on 127.0.0.1.
 Linux server: run npm run start:server, then visit http://<server-IP>:3000.
 One-command install: sudo bash install-linux.sh <server-IP> <web-port> <web-username>
+Existing one-click Linux install: sudo bash EventLens-Linux-v$VERSION.run --upgrade
 Enter the web password at the hidden prompt. See LINUX-安装教程.md.
 See README.md for port, password and systemd configuration.
 EOF

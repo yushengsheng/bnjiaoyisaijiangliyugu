@@ -9,7 +9,8 @@ const binanceApi = require("./lib/binance-api");
 const parser = require("./lib/parser");
 const market = require("./lib/market");
 const ranking = require("./lib/ranking");
-const { CrawlerScheduler, crawlLeaderboard, campaignPatchFromSnapshot } = require("./lib/crawler");
+const prophet = require("./lib/prophet");
+const { CrawlerScheduler } = require("./lib/crawler");
 const APP_VERSION = require("./package.json").version;
 const { runtimeIdentity, createPageLifetime } = require("./lib/desktop");
 const identity = runtimeIdentity();
@@ -24,6 +25,7 @@ const PUBLIC_DIR = path.resolve(__dirname, "public");
 const schedulerIntervalMinutes = Math.max(5, Number.parseInt(process.env.CRAWL_INTERVAL_MINUTES || "30", 10) || 30);
 const scheduler = new CrawlerScheduler(schedulerIntervalMinutes * 60 * 1000);
 const sessionToken = crypto.randomBytes(32).toString("base64url");
+let prophetRefreshing = false;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -44,7 +46,9 @@ const MUTATION_PATHS = new Set([
   "/api/announcements/parse",
   "/api/ranking/update",
   "/api/scheduler/trigger",
-  "/api/scheduler/config"
+  "/api/scheduler/config",
+  "/api/prophet/refresh",
+  "/api/prophet/ranks"
 ]);
 
 function securityHeaders(contentType = "application/json; charset=utf-8") {
@@ -230,6 +234,32 @@ function createServer({
         return sendJson(res, 200, { token: sessionToken, desktop: !remoteAccess && desktopMode });
       }
 
+      if (pathname === "/api/prophet" && req.method === "GET") {
+        return sendJson(res, 200, { snapshot: await storage.getProphetSnapshot(), refreshing: prophetRefreshing });
+      }
+      if (pathname === "/api/prophet/refresh" && req.method === "POST") {
+        await parseBody(req);
+        if (prophetRefreshing) return sendError(res, 429, "神算子正在刷新，请勿重复提交");
+        prophetRefreshing = true;
+        try {
+          const snapshot = await prophet.collect();
+          await storage.saveProphetSnapshot(snapshot);
+          return sendJson(res, 200, { snapshot });
+        } finally { prophetRefreshing = false; }
+      }
+      if (pathname === "/api/prophet/ranks" && req.method === "POST") {
+        const body = await parseBody(req);
+        if (prophetRefreshing) return sendError(res, 429, "神算子正在获取数据，请稍后重试");
+        prophetRefreshing = true;
+        try {
+          const snapshot = await storage.getProphetSnapshot();
+          if (body.board === "weekly" && body.weekIndex !== snapshot?.week?.weekIndex) {
+            return sendError(res, 409, "周榜周次已变化，请先刷新榜单再查看明细");
+          }
+          return sendJson(res, 200, await prophet.getRanks(body));
+        } finally { prophetRefreshing = false; }
+      }
+
       if (pathname === "/api/desktop/page" && req.method === "GET") {
         req.headers["x-eventlens-token"] = query.token;
         if (!requireMutationAccess(req, res)) return;
@@ -253,16 +283,15 @@ function createServer({
           error.statusCode = 400;
           throw error;
         }
-        await storage.upsertCampaign(campaign);
+        campaign = await storage.upsertCampaign(campaign);
 
         let snapshot = null;
         let crawlWarning = null;
         try {
-          snapshot = await crawlLeaderboard(campaign);
+          // 与手动刷新、定时采集共用互斥，并按落库后保留的规则采集。
+          snapshot = await scheduler.runImmediate(campaign.id);
           if (snapshot) {
-            await storage.saveSnapshot(campaign.id, snapshot);
-            const campaignPatch = campaignPatchFromSnapshot(campaign, snapshot);
-            if (Object.keys(campaignPatch).length) campaign = await storage.updateCampaign(campaign.id, campaignPatch);
+            campaign = await storage.getCampaignById(campaign.id);
           } else crawlWarning = "活动已录入，但暂未读取到公开排行榜数据";
         } catch (error) {
           crawlWarning = error.message;
@@ -288,6 +317,8 @@ function createServer({
 
       if (pathname === "/api/campaigns" && req.method === "GET") {
         const all = await storage.getCampaigns();
+        // 仅合并展示，不写入交易赛存储或调度队列；损坏的积分快照也不阻断交易赛列表。
+        all.push(prophet.getActivity(await storage.getProphetSnapshot().catch(() => null)));
         return sendJson(res, 200, {
           source: "local-file",
           groups: {

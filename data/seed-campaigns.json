@@ -116,10 +116,69 @@
       "cutoffRank": 1000
     },
     "cutoffLabel": "第 1000 名门槛",
-    "updatedAt": "2026-09-11T13:29:39.749Z",
+    "updatedAt": "2026-10-22T16:26:18.792Z",
     "needsReview": false,
     "rewardPoolAmount": 400,
-    "bonusRewards": []
+    "bonusRewards": [
+      {
+        "name": "分轮排名奖励（2 轮）",
+        "roundCount": 2,
+        "totalReward": 80,
+        "rewardToken": "BNB",
+        "details": [
+          {
+            "name": "第 1 名",
+            "rankFrom": 1,
+            "rankTo": 1,
+            "rewardsPerRound": [
+              12,
+              12
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 2 名",
+            "rankFrom": 2,
+            "rankTo": 2,
+            "rewardsPerRound": [
+              10,
+              10
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 3 名",
+            "rankFrom": 3,
+            "rankTo": 3,
+            "rewardsPerRound": [
+              8,
+              8
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 4 名",
+            "rankFrom": 4,
+            "rankTo": 4,
+            "rewardsPerRound": [
+              6,
+              6
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 5 名",
+            "rankFrom": 5,
+            "rankTo": 5,
+            "rewardsPerRound": [
+              4,
+              4
+            ],
+            "rewardToken": "BNB"
+          }
+        ]
+      }
+    ]
   },
   {
     "id": "202609tradersleague4-Spot-Carnival-Waves-Round1",
@@ -636,11 +695,70 @@
       "cutoffRank": 1000
     },
     "cutoffLabel": "第 1000 名门槛",
-    "updatedAt": "2026-09-12T14:09:33.710Z",
+    "updatedAt": "2026-10-22T16:26:18.792Z",
     "needsReview": false,
     "resourceId": 100023944,
     "rewardPoolAmount": 400,
-    "bonusRewards": []
+    "bonusRewards": [
+      {
+        "name": "分轮排名奖励（2 轮）",
+        "roundCount": 2,
+        "totalReward": 80,
+        "rewardToken": "BNB",
+        "details": [
+          {
+            "name": "第 1 名",
+            "rankFrom": 1,
+            "rankTo": 1,
+            "rewardsPerRound": [
+              12,
+              12
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 2 名",
+            "rankFrom": 2,
+            "rankTo": 2,
+            "rewardsPerRound": [
+              10,
+              10
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 3 名",
+            "rankFrom": 3,
+            "rankTo": 3,
+            "rewardsPerRound": [
+              8,
+              8
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 4 名",
+            "rankFrom": 4,
+            "rankTo": 4,
+            "rewardsPerRound": [
+              6,
+              6
+            ],
+            "rewardToken": "BNB"
+          },
+          {
+            "name": "第 5 名",
+            "rankFrom": 5,
+            "rankTo": 5,
+            "rewardsPerRound": [
+              4,
+              4
+            ],
+            "rewardToken": "BNB"
+          }
+        ]
+      }
+    ]
   },
   {
     "id": "spot-altcoin-festival-wave-ENSO1",

@@ -22,8 +22,12 @@ test("通过 bsmkweb.cc 导航获取真实公告列表和详情", { timeout: 180
 test("旧域名活动通过 bsmkweb.cc 自动适配新域名并完整抓榜", { timeout: 240000 }, async t => {
   const articles = await api.getAnnouncementList(93, 1, 20);
   const article = articles.find(item => /交易赛|交易大赛|交易锦标赛|trading.*competition/i.test(item.title));
-  assert.ok(article, "近期公告中没有可测试的交易赛");
-  const campaign = parseAnnouncement(await api.getAnnouncementDetail(article.code));
+  // 最新一页可能只有非交易赛公告；此时使用固定公开样本，避免把无样本误判为采集失败。
+  const fallback = require("../data/seed-campaigns.json").find(item => item.id === "spot-altcoin-festival-wave-HOLO-R1");
+  const code = article?.code || fallback?.articleCode;
+  assert.ok(code, "缺少可测试的交易赛公告样本");
+  if (!article) t.diagnostic("近期没有交易赛公告，改用固定 HOLO 公开样本");
+  const campaign = parseAnnouncement(await api.getAnnouncementDetail(code));
   assert.ok(campaign.landingUrl, "公告未包含具体活动路径");
   const oldUrl = new URL(campaign.landingUrl);
   oldUrl.hostname = "www.retired-eventlens-mirror.com";

@@ -6,7 +6,7 @@ VERSION=$(node -p "require(process.argv[1]).version" "$PACKAGE_ROOT/package.json
 PACKAGE_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/eventlens-linux-package.XXXXXX")
 trap 'rm -rf -- "$PACKAGE_TEMP"' EXIT
 mkdir -p "$PACKAGE_ROOT/dist" "$PACKAGE_TEMP/source/lib" "$PACKAGE_TEMP/source/public" "$PACKAGE_TEMP/source/data"
-for file in server.js package.json install-linux.sh LINUX-安装教程.md README.md PRIVACY.md LICENSE; do
+for file in server.js package.json install-linux.sh upgrade-linux.sh LINUX-安装教程.md README.md PRIVACY.md LICENSE; do
   cp "$PACKAGE_ROOT/$file" "$PACKAGE_TEMP/source/"
 done
 cp "$PACKAGE_ROOT"/lib/*.js "$PACKAGE_TEMP/source/lib/"

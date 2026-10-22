@@ -57,6 +57,21 @@ test("手动调度只按活动 ID 精确匹配", () => {
   assert.equal(findCampaignForImmediate(campaigns).id, "Round-A");
 });
 
+test("已过期交易赛不会进入自动采集，但仍可按ID手动选择", async t => {
+  const { CrawlerScheduler } = require("../lib/crawler");
+  const storage = require("../lib/storage");
+  const ended = { id: "expired", status: "history", landingUrl: "https://www.binance.com/activity/trading-competition/expired/Main-Reward" };
+  t.mock.method(storage, "getCampaigns", async () => [ended]);
+  let writes = 0;
+  t.mock.method(storage, "saveSnapshot", async () => { writes++; });
+  const scheduler = new CrawlerScheduler();
+  await scheduler.runBatch();
+  assert.equal(writes, 0);
+  assert.equal(scheduler.lastStatus, "检查完成：成功 0，失败 0");
+  assert.equal(findCampaignForImmediate([ended], ended.id), ended);
+  assert.equal(findCampaignForImmediate([ended]), null);
+});
+
 test("手动调度在读取活动期间也拒绝重复抓取，并在失败后释放状态", async t => {
   const { CrawlerScheduler } = require("../lib/crawler");
   const storage = require("../lib/storage");

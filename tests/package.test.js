@@ -34,15 +34,26 @@ test("Release ZIP 包含原生启动器源码且保留其他版本归档", () =>
   assert.match(listing, /\.app\/Contents\/MacOS\/EventLens/);
   assert.match(listing, /scripts\/launch-desktop\.js/);
   assert.match(listing, /install-linux\.sh/);
+  assert.match(listing, /upgrade-linux\.sh/);
+  assert.match(listing, /lib\/linux-upgrade\.js/);
   assert.match(listing, /LINUX-/);
   assert.match(listing, /scripts\/macos-launcher\.m/);
   assert.match(listing, /scripts\/build-macos-launcher\.sh/);
-  assert.doesNotMatch(listing, /manifest\.json|background\.js|data\/campaigns\.json/);
+  for (const file of ["lib/prophet.js", "public/prophet.js", "public/prophet.css", "public/prophet.html"]) {
+    assert.ok(listing.split("\n").includes(`EventLens-Local-v${version}/${file}`), file);
+  }
+  assert.doesNotMatch(listing, /manifest\.json|background\.js|data\/(campaigns|snapshots|snapshot-history|settings|prophet)\.json/);
+  assert.doesNotMatch(listing, /data\/\.manual-update-/);
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "eventlens-package-"));
   try {
     execFileSync("unzip", ["-q", archive, "-d", temp]);
     const folder = path.join(temp, `EventLens-Local-v${version}`);
+    for (const dir of ["lib", "public"]) {
+      for (const name of fs.readdirSync(path.join(root, dir))) {
+        assert.deepEqual(fs.readFileSync(path.join(folder, dir, name)), fs.readFileSync(path.join(root, dir, name)), `${dir}/${name}`);
+      }
+    }
     execFileSync(process.execPath, ["--check", "server.js"], { cwd: folder });
     assert.equal(fs.existsSync(path.join(folder, "双击打开.command")), true);
     assert.equal(fs.statSync(path.join(folder, "start.sh")).mode & 0o111, 0o111);
@@ -108,9 +119,18 @@ test("解压后的发布包在中文与特殊字符目录中真实启动并初�
     assert.equal(health.version, version);
     const groups = (await (await fetch(`${base}/api/campaigns`)).json()).groups;
     assert.ok(groups.active.length + groups.history.length > 0);
+    assert.equal([...groups.active, ...groups.history].filter(item => item.kind === "prophet").length, 1);
     const page = await (await fetch(base)).text();
     assert.match(page, /id="rankSummaryGrid" class="rank-summary-grid"/);
     assert.match(page, /app\.js\?v=/);
+    assert.match(page, /id="seasonRankSearch"/);
+    assert.match(page, /id="weeklyRankSearch"/);
+    for (const file of ["prophet.js", "prophet.css", "prophet.html"]) {
+      const response = await fetch(`${base}/${file}`);
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), fs.readFileSync(path.join(root, "public", file), "utf8"));
+    }
+    assert.deepEqual(await (await fetch(`${base}/api/prophet`)).json(), { snapshot: null, refreshing: false });
     assert.ok(fs.existsSync(path.join(folder, "data/campaigns.json")));
     assert.ok(fs.existsSync(path.join(folder, "data/settings.json")));
   } finally {

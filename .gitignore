@@ -6,5 +6,7 @@ data/campaigns.json
 data/snapshots.json
 data/snapshot-history.json
 data/settings.json
+data/prophet.json
 data/*.tmp
 data/*.corrupt-*
+data/.manual-update-*/

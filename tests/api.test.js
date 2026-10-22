@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { makeDataDir, sampleSnapshot, sampleCampaign } = require("./helpers");
+const { makeDataDir, sampleSnapshot, sampleCampaign, mockPage } = require("./helpers");
 
 process.env.EVENTLENS_DATA_DIR = makeDataDir();
 const binanceApi = require("../lib/binance-api");
@@ -64,8 +64,8 @@ test("活动按结束时间排序：进行中升序、历史降序，未知日�
   try {
     await storage.saveCampaigns(entries.map(([id, endTime]) => sampleCampaign({ id, endTime })));
     const { data } = await json("/api/campaigns");
-    assert.deepEqual(data.groups.active.map(c => c.id), ["early", "tie", "late", "unknown", "invalid"]);
-    assert.deepEqual(data.groups.history.map(c => c.id), ["recent", "old"]);
+    assert.deepEqual(data.groups.active.filter(c => c.kind !== "prophet").map(c => c.id), ["early", "tie", "late", "unknown", "invalid"]);
+    assert.deepEqual(data.groups.history.filter(c => c.kind !== "prophet").map(c => c.id), ["recent", "old"]);
     assert.deepEqual((await storage.getCampaigns()).map(c => c.id), entries.map(([id]) => id));
   } finally { await storage.saveCampaigns(saved); }
 });
@@ -304,4 +304,51 @@ test("排行榜采集失败返回具体原因而不是笼统服务器内部错�
 test("未知 API 和不允许的方法具有正确语义", async () => {
   assert.equal((await json("/api/not-found")).response.status, 404);
   assert.equal((await json("/api/health", { method: "POST", headers: { Origin: base, "X-EventLens-Token": token } })).response.status, 405);
+});
+
+test("重新录入反查失败的活动，使用保留规则而非临时默认分界采集", async t => {
+  const parser = require("../lib/parser");
+  const { buildExactSnapshot } = require("../lib/crawler");
+  t.mock.method(parser, "createCampaignFromLeaderboardUrl", async () => sampleCampaign({
+    needsReview: true, tiers: [], otherReward: { cutoffRank: 1000 }, pairs: [], name: "反查失败"
+  }));
+  t.mock.method(serverModule.scheduler, "runImmediate", async campaignId => {
+    const saved = await storage.getCampaignById(campaignId);
+    assert.equal(saved.otherReward.cutoffRank, 3);
+    assert.equal(saved.tiers.length, 2);
+    const snapshot = buildExactSnapshot({ resourceId: 123, cutoffRank: saved.otherReward.cutoffRank,
+      tierCutoffs: saved.tiers.map(tier => tier.rankTo), pages: [mockPage(1, 5, 5, { volumes: [5000, 4000, 3000, 2000, 1000] })] });
+    await storage.saveSnapshot(campaignId, snapshot);
+    return snapshot;
+  });
+  const { response, data } = await json("/api/campaigns/add-by-url", { method: "POST",
+    headers: { "Content-Type": "application/json", "X-EventLens-Token": token }, body: JSON.stringify({ url: "fixture" }) });
+  assert.equal(response.status, 200);
+  assert.equal(data.warning, null);
+  assert.equal(data.campaign.needsReview, false);
+  assert.equal(data.campaign.otherReward.cutoffRank, 3);
+  assert.equal(data.snapshot.topRankingTradingVolume, 12000);
+  assert.equal(data.snapshot.otherEligibleTradingVolume, 3000);
+});
+
+test("并行录入与调度共用原有单任务互斥，忙碌时仍保留录入并给出警告", async t => {
+  const parser = require("../lib/parser");
+  t.mock.method(parser, "createCampaignFromLeaderboardUrl", async () => sampleCampaign());
+  let release;
+  let calls = 0;
+  t.mock.method(storage, "getCampaigns", () => { calls++; return new Promise(resolve => { release = resolve; }); });
+  const add = () => json("/api/campaigns/add-by-url", { method: "POST",
+    headers: { "Content-Type": "application/json", "X-EventLens-Token": token }, body: JSON.stringify({ url: "fixture" }) });
+  const first = add();
+  try {
+    for (let i = 0; i < 100 && !calls; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(calls, 1);
+    assert.equal(serverModule.scheduler.isRunning, true);
+    const second = await add();
+    assert.equal(second.response.status, 200);
+    assert.match(second.data.warning, /已有排行榜抓取任务/);
+    await serverModule.scheduler.runBatch();
+    assert.equal(calls, 1);
+  } finally { release?.([]); await first; }
+  assert.equal(serverModule.scheduler.isRunning, false);
 });

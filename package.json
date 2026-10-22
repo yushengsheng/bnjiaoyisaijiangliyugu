@@ -1,6 +1,6 @@
 {
   "name": "eventlens-local",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "本地运行的币安交易赛排行榜、奖励与买卖价差分析工具",
   "private": true,
   "main": "server.js",

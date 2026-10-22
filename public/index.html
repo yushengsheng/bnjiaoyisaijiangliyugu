@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EventLens 活动分析 - 币安交易赛数据与成本量化工具</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="prophet.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f59e0b'/><text x='50%' y='68%' font-size='56' font-weight='900' text-anchor='middle' fill='%230f1115'>E</text></svg>">
 </head>
 <body>
@@ -60,7 +61,7 @@
       <!-- 活动分类切换 Tab -->
       <div class="view-tabs" aria-label="活动分类">
         <button id="tabActive" class="view-tab active">进行中 <span id="countActive">0</span></button>
-        <button id="tabHistory" class="view-tab">历史活动 <span id="countHistory">0</span></button>
+        <button id="tabHistory" class="view-tab">已过期 <span id="countHistory">0</span></button>
       </div>
 
       <!-- 活动选择按钮条 (滚动列表) -->
@@ -259,6 +260,36 @@
 
       </div>
 
+      <section id="prophetPanel" class="prophet-shell hidden" aria-labelledby="prophetActivityName">
+        <div class="section-heading">
+          <div><p class="eyebrow">积分活动 · 仅手动更新</p><h1 id="prophetActivityName">神算子</h1><p id="prophetPeriod" class="prophet-subtitle"></p></div>
+          <div class="heading-tags"><span id="prophetActivityState" class="status-badge"></span><button id="prophetRefresh" class="btn-primary" disabled>刷新榜单</button></div>
+        </div>
+        <div class="prophet-meta"><span id="prophetTime">尚未获取数据</span><a id="prophetSource" class="link-badge" href="https://www.eiwodrxhplfw.com/zh-CN/prophet/leaderboard?seasonId=prophet_1019_s1" target="_blank" rel="noopener noreferrer">官方排行榜 ↗</a></div>
+        <p id="prophetStatus" class="prophet-status" role="status" aria-live="polite">正在读取本机保存的数据…</p>
+        <div class="prophet-boards">
+          <section class="prophet-board" aria-labelledby="seasonTitle">
+            <div class="prophet-board-heading"><div><p class="eyebrow">赛季总积分</p><h2 id="seasonTitle">赛季榜</h2></div><span class="prophet-label">累计积分</span></div>
+            <p id="seasonPeriod" class="prophet-period">—</p>
+            <form id="seasonSearchForm" class="prophet-search"><label for="seasonRankSearch">搜索名次</label><input id="seasonRankSearch" type="number" min="1" step="1" inputmode="numeric" placeholder="如 15000" required><button class="btn-secondary small prophet-data-action" type="submit" disabled>查询</button></form>
+            <p class="prophet-period">点击奖励名次可展开逐名积分，每页 50 条。</p>
+            <div class="prophet-table-wrap"><table><thead><tr><th scope="col">奖励名次</th><th scope="col">末位积分</th><th id="seasonUnit" scope="col">档位奖励</th></tr></thead><tbody id="seasonRows"><tr><td colspan="3" class="prophet-empty">点击“刷新榜单”获取门槛</td></tr></tbody></table></div>
+            <p id="seasonDetailStatus" class="prophet-status" role="status" aria-live="polite"></p>
+            <section id="seasonDetails" class="prophet-details" hidden aria-labelledby="seasonDetailTitle"><h3 id="seasonDetailTitle"></h3><p id="seasonDetailTime" class="prophet-period"></p><div class="prophet-table-wrap"><table><thead><tr><th scope="col">名次</th><th scope="col">完整积分</th><th scope="col">预计奖励</th></tr></thead><tbody id="seasonDetailRows"></tbody></table></div><div class="prophet-pagination"><button id="seasonPrev" type="button" class="btn-secondary small prophet-data-action">上一页</button><span id="seasonPageInfo"></span><button id="seasonNext" type="button" class="btn-secondary small prophet-data-action">下一页</button></div></section>
+          </section>
+          <section class="prophet-board" aria-labelledby="weeklyTitle">
+            <div class="prophet-board-heading"><div><p class="eyebrow">每周预测收益</p><h2 id="weeklyTitle">周榜</h2></div><span class="prophet-label">收益积分</span></div>
+            <p id="weeklyPeriod" class="prophet-period">按官方周次自动选择</p>
+            <form id="weeklySearchForm" class="prophet-search"><label for="weeklyRankSearch">搜索名次</label><input id="weeklyRankSearch" type="number" min="1" step="1" inputmode="numeric" placeholder="如 5000" required><button class="btn-secondary small prophet-data-action" type="submit" disabled>查询</button></form>
+            <p class="prophet-period">点击奖励名次可展开逐名收益，每页 50 条。</p>
+            <div class="prophet-table-wrap"><table><thead><tr><th scope="col">奖励名次</th><th scope="col">末位收益</th><th id="weeklyUnit" scope="col">档位奖励</th></tr></thead><tbody id="weeklyRows"><tr><td colspan="3" class="prophet-empty">点击“刷新榜单”获取门槛</td></tr></tbody></table></div>
+            <p id="weeklyDetailStatus" class="prophet-status" role="status" aria-live="polite"></p>
+            <section id="weeklyDetails" class="prophet-details" hidden aria-labelledby="weeklyDetailTitle"><h3 id="weeklyDetailTitle"></h3><p id="weeklyDetailTime" class="prophet-period"></p><div class="prophet-table-wrap"><table><thead><tr><th scope="col">名次</th><th scope="col">完整收益</th><th scope="col">预计奖励</th></tr></thead><tbody id="weeklyDetailRows"></tbody></table></div><div class="prophet-pagination"><button id="weeklyPrev" type="button" class="btn-secondary small prophet-data-action">上一页</button><span id="weeklyPageInfo"></span><button id="weeklyNext" type="button" class="btn-secondary small prophet-data-action">下一页</button></div></section>
+          </section>
+        </div>
+        <p class="disclaimer prophet-notes">仅手动刷新，过期后归入“已过期”，不参与自动采集。末位分数为该奖励档位最后一名的门槛；同分仍以官方名次为准。奖励来自官方配置，非保底承诺，最终以活动规则及资格审核为准。采集时间不代表官方榜单更新时间，多个请求不保证同一瞬时快照。</p>
+      </section>
+
       <!-- 官方最新活动弹窗 (Modal) -->
       <div id="announcementModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="announcementModalTitle">
         <div class="modal-content">
@@ -278,6 +309,7 @@
     </main>
   </div>
 
+  <script src="prophet.js"></script>
   <script src="app.js"></script>
   <script src="lifecycle.js"></script>
 </body>

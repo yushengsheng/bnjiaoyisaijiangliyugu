@@ -243,6 +243,7 @@
     state.currentCampaign = null;
     clearDetailData();
     $("campaignDetails").classList.add("hidden");
+    $("prophetPanel").classList.add("hidden");
     setDetailStatus();
     rememberSelection(null, true);
   }
@@ -276,9 +277,16 @@
     $("rankDetails").open = false;
     state.currentTab = campaign.status === "history" ? "history" : "active";
     renderCampaignTabs();
-    $("campaignDetails").classList.remove("hidden");
+    $("campaignDetails").classList.toggle("hidden", campaign.kind === "prophet");
+    $("prophetPanel").classList.toggle("hidden", campaign.kind !== "prophet");
     rememberSelection(campaign.id, updateUrl);
     renderCampaignButtons();
+    if (campaign.kind === "prophet") {
+      clearDetailData();
+      setDetailStatus();
+      document.dispatchEvent(new CustomEvent("eventlens:prophet-open", { detail: campaign }));
+      return;
+    }
     renderCampaignHeader();
     clearDetailData();
     renderSummaryCards();
@@ -306,6 +314,7 @@
     if (current) {
       state.currentCampaign = current;
       state.currentTab = current.status === "history" ? "history" : "active";
+      if (current.kind === "prophet") document.dispatchEvent(new CustomEvent("eventlens:prophet-open", { detail: current }));
       renderCampaignHeader();
       renderSummaryCards();
     } else if (state.currentCampaignId || !targetId) {
@@ -328,7 +337,7 @@
 
   async function loadCurrentCampaignDetails({ force = false } = {}) {
     const campaign = state.currentCampaign;
-    if (!campaign || (state.detailLoading && !force)) return;
+    if (!campaign || campaign.kind === "prophet" || (state.detailLoading && !force)) return;
     if (force) {
       state.detailController?.abort();
       state.detailRequestId++;
@@ -380,7 +389,7 @@
 
   async function reloadMarketOnly() {
     const campaign = state.currentCampaign;
-    if (!campaign || !Object.values(state.costInputValidity).every(Boolean)) return;
+    if (!campaign || campaign.kind === "prophet" || !Object.values(state.costInputValidity).every(Boolean)) return;
     const requestId = ++state.marketRequestId;
     try {
       const marketData = await api(`/api/binance/market?campaignId=${encodeURIComponent(campaign.id)}&feeRate=${state.feeRate}&rebateRate=${state.rebateRate}`);
@@ -403,7 +412,7 @@
     const container = $("campaignList");
     const list = state.currentTab === "active" ? state.campaigns.active : state.campaigns.history;
     if (!list.length) {
-      container.innerHTML = `<div class="empty-state">${state.currentTab === "active" ? "暂无进行中的活动" : "暂无历史活动"}</div>`;
+      container.innerHTML = `<div class="empty-state">${state.currentTab === "active" ? "暂无进行中的活动" : "暂无已过期活动"}</div>`;
       return;
     }
     container.innerHTML = list.map(item => {
@@ -411,7 +420,7 @@
       const title = String(item.name || "").trim() || `${item.token || "未知"} 交易活动`;
       return `<button class="campaign-button ${item.id === state.currentCampaignId ? "selected" : ""}" data-campaign-id="${escapeHtml(item.id)}">
         <span class="campaign-token">${escapeHtml(item.token || "—")}</span>
-        <span class="campaign-meta"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(item.market || "现货")}交易活动 ${statusText ? `<em>${escapeHtml(statusText)}</em>` : ""}</small></span>
+        <span class="campaign-meta"><strong>${escapeHtml(title)}</strong><small>${item.kind === "prophet" ? "积分活动 · 仅手动更新" : `${escapeHtml(item.market || "现货")}交易活动`} ${statusText ? `<em>${escapeHtml(statusText)}</em>` : ""}</small></span>
       </button>`;
     }).join("");
     container.querySelectorAll("[data-campaign-id]").forEach(button => {
@@ -421,7 +430,7 @@
 
   function renderCampaignHeader() {
     const campaign = state.currentCampaign;
-    if (!campaign) return;
+    if (!campaign || campaign.kind === "prophet") return;
     $("currentCampaignName").textContent = campaign.name;
     const badge = $("currentStatusBadge");
     const labels = { active: "进行中", upcoming: "即将开始", history: "已结束", "needs-review": "规则待核对" };
@@ -445,7 +454,7 @@
   function renderSummaryCards() {
     const campaign = state.currentCampaign;
     const ranking = state.rankingData;
-    if (!campaign) return;
+    if (!campaign || campaign.kind === "prophet") return;
     const tailCap = ranking ? ranking.otherRewardCap : campaign.otherReward?.capPerUser;
     const tailToken = ranking?.otherRewardToken || campaign.otherReward?.token || campaign.rewardToken || "奖励币";
     const hasTailCap = hasNumber(tailCap) && Number(tailCap) >= 0;
@@ -725,7 +734,7 @@
   }
 
   async function triggerCrawl() {
-    if (!state.currentCampaign) return;
+    if (!state.currentCampaign || state.currentCampaign.kind === "prophet") return;
     const campaignId = state.currentCampaign.id;
     const feeRate = state.feeRate;
     const rebateRate = state.rebateRate;
@@ -939,6 +948,7 @@
   }
 
   function bindEvents() {
+    document.addEventListener("eventlens:prophet-updated", () => refreshCampaigns());
     $("tabActive").addEventListener("click", () => switchCampaignTab("active"));
     $("tabHistory").addEventListener("click", () => switchCampaignTab("history"));
     $("rankSearch").addEventListener("input", event => {
