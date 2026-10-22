@@ -13,7 +13,9 @@ cp "$PACKAGE_ROOT"/lib/*.js "$PACKAGE_TEMP/source/lib/"
 cp "$PACKAGE_ROOT"/public/* "$PACKAGE_TEMP/source/public/"
 cp "$PACKAGE_ROOT/data/seed-campaigns.json" "$PACKAGE_ROOT/data/seed-snapshots.json" "$PACKAGE_TEMP/source/data/"
 chmod 755 "$PACKAGE_TEMP/source/install-linux.sh"
-COPYFILE_DISABLE=1 tar -czf "$PACKAGE_TEMP/source.tar.gz" -C "$PACKAGE_TEMP/source" .
+TAR_METADATA_FLAGS=()
+if [[ $(uname -s) == Darwin ]]; then TAR_METADATA_FLAGS=(--no-xattrs --no-acls --no-fflags); fi
+COPYFILE_DISABLE=1 tar "${TAR_METADATA_FLAGS[@]}" --format=ustar -czf "$PACKAGE_TEMP/source.tar.gz" -C "$PACKAGE_TEMP/source" .
 if command -v sha256sum >/dev/null; then
   PAYLOAD_HASH=$(sha256sum "$PACKAGE_TEMP/source.tar.gz" | cut -d' ' -f1)
 else

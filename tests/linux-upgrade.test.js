@@ -94,9 +94,15 @@ function installation(mode = "success", active = true) {
   for (const name of ["campaigns.json", "snapshots.json", "snapshot-history.json", "settings.json", "prophet.json"]) fs.writeFileSync(path.join(data, name), JSON.stringify({ original: name, autoUpdateEnabled: false }));
   const originals = Object.fromEntries(fs.readdirSync(data).map(name => [name, fs.readFileSync(path.join(data, name))]));
   const originalConfig = fs.readFileSync(path.join(cfg, "eventlens.env"));
+  if (mode.startsWith("legacy")) {
+    fs.unlinkSync(path.join(app, ".eventlens-installed"));
+    fs.writeFileSync(unit, fs.readFileSync(unit, "utf8").replace("# Managed by EventLens Linux installer\n", ""));
+  }
+  if (mode === "legacy-inline") fs.appendFileSync(unit, 'Environment="PORT=1"\n');
+  if (mode === "legacy-other-app") fs.writeFileSync(path.join(app, "app/package.json"), '{"name":"other-app","version":"2.1.2"}');
   const originalUnit = fs.readFileSync(unit);
   const runtime = path.join(app, "runtime/node/bin/node");
-  fs.writeFileSync(runtime, `#!/bin/bash\nif [[ "$2" == health ]]; then\n  v=$(${quote(process.execPath)} -p 'require(process.argv[1]).version' ${quote(path.join(app, "app/package.json"))})\n  if [[ ${quote(mode)} == bad-health && "$v" != 2.1.2 ]]; then exit 1; fi\n  exit 0\nfi\nexec ${quote(process.execPath)} "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(runtime, `#!/bin/bash\nif [[ "$2" == health ]]; then\n  v=$(${quote(process.execPath)} -p 'require(process.argv[1]).version' ${quote(path.join(app, "app/package.json"))})\n  if [[ ${quote(mode)} == bad-health && "$v" != 2.1.2 ]]; then exit 1; fi\n  if [[ ${quote(mode)} == legacy-bad-health ]]; then exit 1; fi\n  printf '%s\\n' "$v" >>${quote(path.join(dir, "health-versions"))}\n  exit 0\nfi\nexec ${quote(process.execPath)} "$@"\n`, { mode: 0o755 });
   const activeFile = path.join(dir, "active");
   fs.writeFileSync(activeFile, active ? "1" : "0");
   if (mode === "external") fs.writeFileSync(unit, "unrelated service\n");
@@ -195,13 +201,14 @@ for (const corrupt of [false, true]) test(`远程升级下载校验${corrupt ? "
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("README与Linux教程的一段升级命令语法有效，下载固定正式版而非main源码", () => {
+test("README与Linux教程的一段升级命令语法有效，latest入口配套脚本仍固定到正式版本", () => {
   for (const file of ["README.md", "LINUX-安装教程.md"]) {
     const source = fs.readFileSync(path.join(root, file), "utf8");
     const command = source.split("\n").find(line => line.startsWith("bash -c 'set -e; d=$(mktemp -d)"));
     assert.ok(command);
     assert.equal(spawnSync("bash", ["-n", "-c", command]).status, 0);
-    assert.ok(command.includes(`/releases/download/v${version}/upgrade-linux.sh`));
+    assert.ok(command.includes("/releases/latest/download/upgrade-linux.sh"));
+    assert.ok(fs.readFileSync(path.join(root, "upgrade-linux.sh"), "utf8").includes(`VERSION=${version}`));
   }
 });
 
@@ -231,4 +238,78 @@ test("安装升级互斥锁被占用时，不进入升级事务", unix, () => {
     assert.equal(fs.existsSync(marker), false);
     assert.match(result.stderr, /另一个安装或升级任务/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("缺少安装标记和服务注释的旧安装先验证旧服务，升级后生成可持续识别的记录", unix, () => {
+  const f = installation("legacy");
+  try {
+    assert.equal(f.result.status, 0, f.result.stderr);
+    assert.deepEqual(fs.readFileSync(f.unit), f.originalUnit);
+    assert.deepEqual(fs.readFileSync(path.join(f.cfg, "eventlens.env")), f.originalConfig);
+    for (const [name, contents] of Object.entries(f.originals)) assert.deepEqual(fs.readFileSync(path.join(f.data, name)), contents);
+    const marker = path.join(f.app, ".eventlens-installed");
+    assert.equal(JSON.parse(fs.readFileSync(marker)).kind, "verified-legacy");
+    assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
+    assert.equal(upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), "adopted");
+    assert.deepEqual(fs.readFileSync(path.join(f.dir, "health-versions"), "utf8").trim().split("\n"), ["2.1.2", version]);
+    assert.equal((f.result.stdout + f.result.stderr).includes(f.password), false);
+    fs.appendFileSync(f.unit, 'Environment="PORT=1"\n');
+    assert.throws(() => upgrade.checkInstall(f.app, f.data, f.cfg, f.unit));
+  } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+for (const mode of ["legacy-bad-health", "legacy-inline", "legacy-other-app"]) test(`旧安装 ${mode} 校验失败时不停止服务、不创建记录`, unix, () => {
+  const f = installation(mode);
+  try {
+    assert.notEqual(f.result.status, 0);
+    assert.equal(fs.readFileSync(f.activeFile, "utf8"), "1");
+    assert.equal(fs.existsSync(path.join(f.app, ".eventlens-installed")), false);
+    const calls = fs.existsSync(path.join(f.dir, "calls")) ? fs.readFileSync(path.join(f.dir, "calls"), "utf8") : "";
+    assert.doesNotMatch(calls, /stop|start/);
+    for (const [name, contents] of Object.entries(f.originals)) assert.deepEqual(fs.readFileSync(path.join(f.data, name)), contents);
+  } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("首次识别旧安装不擅自启动停止中的服务", unix, () => {
+  const f = installation("legacy", false);
+  try {
+    assert.notEqual(f.result.status, 0);
+    assert.equal(fs.readFileSync(f.activeFile, "utf8"), "0");
+    assert.equal(fs.existsSync(path.join(f.app, ".eventlens-installed")), false);
+    const calls = fs.readFileSync(path.join(f.dir, "calls"), "utf8");
+    assert.doesNotMatch(calls, /stop|start/);
+  } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("识别记录不包含凭据，校验通过后即使旧服务停止也可继续识别", unix, () => {
+  const f = installation("legacy");
+  try {
+    assert.equal(f.result.status, 0, f.result.stderr);
+    fs.writeFileSync(f.activeFile, "0");
+    assert.equal(upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), "adopted");
+    const marker = path.join(f.app, ".eventlens-installed");
+    assert.equal(fs.readFileSync(marker, "utf8").includes(f.password), false);
+    fs.unlinkSync(marker);
+    fs.symlinkSync(path.join(f.dir, "missing"), marker);
+    assert.throws(() => upgrade.checkInstall(f.app, f.data, f.cfg, f.unit));
+  } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("兼容官方 Node tar 保留的构建 UID，但仍拒绝可被其他用户写入的运行时", unix, () => {
+  const f = installation("legacy");
+  const original = fs.lstatSync;
+  try {
+    assert.equal(f.result.status, 0, f.result.stderr);
+    fs.unlinkSync(path.join(f.app, ".eventlens-installed"));
+    const runtime = path.join(f.app, "runtime/node/bin/node");
+    fs.lstatSync = (file, ...args) => {
+      const stat = original(file, ...args);
+      if (path.resolve(file) === runtime) stat.uid = process.getuid() + 1;
+      return stat;
+    };
+    assert.equal(upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), "legacy");
+    fs.chmodSync(runtime, 0o777);
+    assert.throws(() => upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), /权限/);
+  } finally { fs.lstatSync = original; fs.rmSync(f.dir, { recursive: true, force: true }); }
 });

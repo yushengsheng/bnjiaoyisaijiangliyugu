@@ -112,6 +112,8 @@ test("单文件 Linux 安装包自带完整源码并校验内容，篡改后拒�
   assert.ok(position > 0);
   const header = content.subarray(0, position).toString("utf8");
   const payload = content.subarray(position + marker.length);
+  const tarBytes = zlib.gunzipSync(payload);
+  assert.doesNotMatch(tarBytes.toString("latin1"), /LIBARCHIVE\.xattr|SCHILY\.xattr|com\.apple\.provenance|AppleDouble/);
   assert.equal(crypto.createHash("sha256").update(payload).digest("hex"), header.match(/EXPECTED_HASH=([a-f0-9]{64})/)[1]);
   const dir = temporary();
   const tarFile = path.join(dir, "source.tar");

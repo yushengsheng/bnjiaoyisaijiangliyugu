@@ -3,7 +3,7 @@ set +x
 set -euo pipefail
 
 # 固定到此正式版，避免清单与下载文件跨版本混用。
-VERSION=2.2.0
+VERSION=2.2.1
 BASE="https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/download/v$VERSION"
 ARCHIVE="EventLens-Linux-v$VERSION.run"
 [[ $# -eq 0 ]] || { printf '%s\n' '无需输入端口或账号，升级会保留原配置。' >&2; exit 1; }

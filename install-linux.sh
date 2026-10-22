@@ -19,6 +19,7 @@ UPGRADE_BACKUP=
 UPGRADE_STAGE=
 UPGRADE_HELPER=
 UPGRADE_OLD_VERSION=
+UPGRADE_INSTALL_KIND=
 
 say() { printf '%s\n' "$*"; }
 fail() { printf '安装失败：%s\n' "$*" >&2; return 1; }
@@ -148,10 +149,9 @@ cleanup() {
 
 upgrade_preflight() {
   [[ $EUID -eq 0 ]] || { fail '升级需要 root 或 sudo 权限。'; return 1; }
-  [[ -f "$APP_ROOT/.eventlens-installed" ]] || { fail '未检测到原一键安装记录，请勿使用升级模式覆盖手动部署。'; return 1; }
   NODE_BIN="$APP_ROOT/runtime/node/bin/node"
   [[ -x "$NODE_BIN" && -f "$EVENTLENS_SOURCE/lib/linux-upgrade.js" ]] || { fail '原运行环境或升级包不完整。'; return 1; }
-  "$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-install "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR" "$UNIT_FILE" || return 1
+  UPGRADE_INSTALL_KIND=$("$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-install "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR" "$UNIT_FILE") || return 1
   local fragment dropins
   fragment=$(systemctl show -p FragmentPath --value eventlens.service) || return 1
   dropins=$(systemctl show -p DropInPaths --value eventlens.service) || return 1
@@ -165,6 +165,11 @@ upgrade_application() {
   version=$("$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-source "$EVENTLENS_SOURCE") || return 1
   UPGRADE_OLD_VERSION=$("$NODE_BIN" -p 'require(process.argv[1]).version' "$APP_ROOT/app/package.json") || return 1
   [[ "$UPGRADE_OLD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { fail '原程序版本无法识别。'; return 1; }
+  if [[ "$UPGRADE_INSTALL_KIND" == legacy ]]; then
+    say '检测到无完整标记的旧安装，先验证运行进程、原端口及认证，不改写原服务。'
+    systemctl is-active --quiet eventlens.service || { fail '旧安装首次识别需要原服务正在运行，未执行升级。'; return 1; }
+    "$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" health "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR/eventlens.env" "$UPGRADE_OLD_VERSION" || return 1
+  fi
   UPGRADE_STAGE=$(mktemp -d "$APP_ROOT/.upgrade-stage.XXXXXX") || return 1
   install -d -m 755 "$UPGRADE_STAGE/app" "$UPGRADE_STAGE/app/lib" "$UPGRADE_STAGE/app/public" "$UPGRADE_STAGE/app/data" || return 1
   install -m 644 "$EVENTLENS_SOURCE/server.js" "$EVENTLENS_SOURCE/package.json" "$UPGRADE_STAGE/app/" || return 1
@@ -194,6 +199,9 @@ upgrade_application() {
   "$NODE_BIN" "$helper" health "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR/eventlens.env" "$version" || return 1
   "$NODE_BIN" "$helper" verify-config "$UPGRADE_BACKUP/state.json" || return 1
   if (( UPGRADE_WAS_ACTIVE == 0 )); then systemctl stop eventlens.service || return 1; fi
+  if [[ "$UPGRADE_INSTALL_KIND" == legacy ]]; then
+    "$NODE_BIN" "$helper" record-install "$APP_ROOT" "$UNIT_FILE" || return 1
+  fi
   UPGRADE_COMPLETE=1
   say "升级成功：EventLens v$version。原端口、网页账号、数据及自动更新设置已保留。"
   if (( UPGRADE_WAS_ACTIVE == 0 )); then say '服务原先处于停止状态，升级后仍保持停止。'; fi

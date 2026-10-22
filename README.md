@@ -2,7 +2,7 @@
 
 币安交易赛排行榜、奖励和买卖价差分析工具。默认在本地运行，也支持部署到 Linux 服务器，通过 IP 和端口访问。活动配置、排行榜快照和历史记录保存在运行程序的电脑或服务器上，不需要浏览器扩展。
 
-正式版下载：[EventLens Local v2.2.0](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.2.0)。本地版下载 `EventLens-Local-v2.2.0.zip` 后解压，仍需 Node.js 22+；Linux 新安装和升级使用 `.run`。`SHA256SUMS` 用于核对发布文件，旧版归档保留。
+正式版下载：[EventLens Local v2.2.1](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.2.1)。本地版下载 `EventLens-Local-v2.2.1.zip` 后解压，仍需 Node.js 22+；Linux 新安装和升级使用 `.run`。`SHA256SUMS` 用于核对发布文件，旧版归档保留。
 
 ## 功能
 
@@ -86,7 +86,7 @@ http://127.0.0.1:3000
 推荐使用一键安装包，上传服务器后执行：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.0.run 你的服务器公网IPv4 3000 网页用户名
+sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 网页用户名
 ```
 
 随后隐藏输入网页密码；也支持在用户名后增加第四个参数作为密码。脚本自动准备运行环境、浏览器和开机启动，安装成功后通过 `http://你的服务器公网IPv4:3000` 访问。完整上传、安装、端口放行和排错步骤见 [Linux 小白安装教程](LINUX-安装教程.md)。安装包由 `npm run package:linux` 生成，使用本地完整源码，不依赖 GitHub 上是否已同步。
@@ -96,10 +96,10 @@ sudo bash EventLens-Linux-v2.2.0.run 你的服务器公网IPv4 3000 网页用户
 **已有 `.run` 一键安装的服务器升级**（保留原端口，包括 38583、网页账号、活动、快照、趋势及自动更新设置）：
 
 ```bash
-bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/download/v2.2.0/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
+bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/latest/download/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
 ```
 
-脚本固定下载 v2.2.0 并校验 SHA-256，再以 sudo 执行升级；不要重新填写安装参数。也可上传新版 `.run` 后执行 `sudo bash EventLens-Linux-v2.2.0.run --upgrade`。升级先备份、后切换程序，健康检查失败自动回滚旧程序，不重装 Node/浏览器，不改原配置或运行数据。只支持原一键安装器管理且未添加 systemd 覆盖文件的服务；手动部署请勿套用。备份保留在服务器本机程序目录的 `backups` 中，不自动删除。
+入口获取最新正式版升级脚本，脚本固定下载其配套版本并校验 SHA-256，再以 sudo 执行升级；不要重新填写安装参数。也可上传新版 `.run` 后执行 `sudo bash EventLens-Linux-v2.2.1.run --upgrade`。升级先备份、后切换程序，健康检查失败自动回滚旧程序，不重装 Node/浏览器，不改原配置或运行数据。支持原一键安装，以及固定目录、启动参数、配置和真实运行身份均匹配的旧安装；缺少旧标记时先认证验证原服务，成功后保存识别记录，不改服务文件。其他手动部署或 systemd 覆盖配置仍拒绝套用。备份保留在服务器本机程序目录的 `backups` 中，不自动删除。
 
 以下是保留的手动启动与部署方式：
 
