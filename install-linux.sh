@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set +x
 set -euo pipefail
+unset NODE_OPTIONS NODE_PATH
 
 EVENTLENS_SOURCE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 APP_ROOT=/opt/eventlens
@@ -33,6 +34,8 @@ usage() {
 省略密码时会隐藏输入，并要求再输入一次确认。
 用户名和密码用于访问网页，与服务器登录账号无关。
 --check 仅检查参数，不安装；--help 显示说明。
+可选 HTTPS（需新版 Certbot 和公网 TCP 80）：sudo bash /opt/eventlens/installer.sh --https 服务器公网IPv4
+显式启用后使用原网页端口，并设置可信 IP 证书自动续期；不限制客户端来源 IP。
 已用一键安装包安装的服务器：sudo bash EventLens-Linux-v*.run --upgrade
 升级保留原端口、网页账号、运行数据和自动更新设置，不需要重新输入这些参数。
 
@@ -151,6 +154,7 @@ upgrade_preflight() {
   [[ $EUID -eq 0 ]] || { fail '升级需要 root 或 sudo 权限。'; return 1; }
   NODE_BIN="$APP_ROOT/runtime/node/bin/node"
   [[ -x "$NODE_BIN" && -f "$EVENTLENS_SOURCE/lib/linux-upgrade.js" ]] || { fail '原运行环境或升级包不完整。'; return 1; }
+  prepare_node_runtime || return 1
   UPGRADE_INSTALL_KIND=$("$NODE_BIN" "$EVENTLENS_SOURCE/lib/linux-upgrade.js" check-install "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR" "$UNIT_FILE") || return 1
   local fragment dropins
   fragment=$(systemctl show -p FragmentPath --value eventlens.service) || return 1
@@ -202,6 +206,7 @@ upgrade_application() {
   if [[ "$UPGRADE_INSTALL_KIND" == legacy ]]; then
     "$NODE_BIN" "$helper" record-install "$APP_ROOT" "$UNIT_FILE" || return 1
   fi
+  install -m 644 "$EVENTLENS_SOURCE/install-linux.sh" "$APP_ROOT/installer.sh" || return 1
   UPGRADE_COMPLETE=1
   say "升级成功：EventLens v$version。原端口、网页账号、数据及自动更新设置已保留。"
   if (( UPGRADE_WAS_ACTIVE == 0 )); then say '服务原先处于停止状态，升级后仍保持停止。'; fi
@@ -223,7 +228,7 @@ upgrade_main() {
 }
 
 download() {
-  curl --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 600 "$1" -o "$2"
+  curl --proto "=https" --proto-redir "=https" --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 600 "$1" -o "$2"
 }
 
 install_dependencies() {
@@ -248,18 +253,87 @@ check_port() {
   fi
 }
 
+# 在第一次执行旧 Node 之前检查权限；旧 tar 的构建 UID 不能成为 root 执行的信任依据。
+trusted_directory() {
+  local unsafe
+  [[ -d "$1" && ! -L "$1" ]] || return 1
+  unsafe=$(find "$1" -prune \( ! -user "$(id -u)" -o -perm -020 -o -perm -002 \) -print) || return 1
+  [[ -z "$unsafe" ]]
+}
+
+runtime_layout() {
+  local tree="$APP_ROOT/runtime/node" link resolved unsupported hardlinks
+  trusted_directory "$(dirname -- "$APP_ROOT")" && trusted_directory "$APP_ROOT" || { fail '程序父目录归属或权限不安全，未执行旧运行环境。'; return 1; }
+  [[ -d "$APP_ROOT/runtime" && ! -L "$APP_ROOT/runtime" && -d "$tree" && ! -L "$tree" &&
+     -d "$tree/bin" && ! -L "$tree/bin" && -f "$tree/bin/node" && ! -L "$tree/bin/node" ]] || { fail '运行环境目录或文件类型不安全。'; return 1; }
+  unsupported=$(find "$tree" ! -type f ! -type d ! -type l -print -quit) || return 1
+  hardlinks=$(find "$tree" -type f -links +1 -print -quit) || return 1
+  [[ -z "$unsupported" && -z "$hardlinks" ]] || { fail '运行环境包含不支持的文件或硬链接。'; return 1; }
+  tree=$(realpath "$tree") || return 1
+  while IFS= read -r -d '' link; do
+    [[ -e "$link" ]] || { fail '运行环境包含失效链接。'; return 1; }
+    resolved=$(realpath "$link") || return 1
+    [[ "$resolved" == "$tree/"* ]] || { fail '运行环境包含外部链接，未修改其目标。'; return 1; }
+  done < <(find "$tree" -type l -print0)
+}
+
+runtime_is_trusted() {
+  local unsafe
+  trusted_directory "$APP_ROOT/runtime" || return 1
+  unsafe=$(find "$APP_ROOT/runtime/node" \( ! -user "$(id -u)" -o \( ! -type l \( -perm -020 -o -perm -002 -o -perm -4000 -o -perm -2000 \) \) \) -print -quit) || return 1
+  [[ -z "$unsafe" ]]
+}
+
+fetch_node() {
+  local release=$1 destination=$2 checksum archive
+  download "https://nodejs.org/dist/$release/SHASUMS256.txt" "$INSTALL_TEMP/SHASUMS256.txt" || { fail 'Node.js 校验清单下载失败。'; return 1; }
+  read -r checksum archive < <(awk '$2 ~ /^node-v22\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$/ { print $1, $2; exit }' "$INSTALL_TEMP/SHASUMS256.txt") || return 1
+  [[ "$checksum" =~ ^[a-fA-F0-9]{64}$ && "$archive" =~ ^node-v22\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ &&
+     ( "$release" == latest-v22.x || "$archive" == "node-$release-linux-x64.tar.xz" ) ]] || { fail 'Node.js 校验清单格式无效。'; return 1; }
+  download "https://nodejs.org/dist/$release/$archive" "$INSTALL_TEMP/node.tar.xz" || { fail 'Node.js 下载失败。'; return 1; }
+  printf '%s  %s\n' "$checksum" "$INSTALL_TEMP/node.tar.xz" | sha256sum -c - >"$INSTALL_TEMP/checksum.log" 2>&1 || { fail 'Node.js 校验失败，未执行运行环境。'; return 1; }
+  mkdir -m 755 -- "$destination" || return 1
+  tar --no-same-owner -xJf "$INSTALL_TEMP/node.tar.xz" -C "$destination" --strip-components=1 || return 1
+  chown -hR "$(id -u):$(id -g)" "$destination" || return 1
+  find "$destination" -type d -exec chmod u-s,g-s,go-w {} + || return 1
+  find "$destination" -type f -exec chmod u-s,g-s,go-w {} + || return 1
+}
+
+prepare_node_runtime() {
+  runtime_layout || return 1
+  if runtime_is_trusted; then return 0; fi
+  # 只读版本头，不运行旧二进制来获取版本。校验失败时不停止原服务。
+  local header="$APP_ROOT/runtime/node/include/node/node_version.h" major minor patch release reference
+  [[ -f "$header" && ! -L "$header" ]] || { fail '无法安全识别旧 Node 版本。'; return 1; }
+  major=$(awk '$1 == "#define" && $2 == "NODE_MAJOR_VERSION" {print $3}' "$header")
+  minor=$(awk '$1 == "#define" && $2 == "NODE_MINOR_VERSION" {print $3}' "$header")
+  patch=$(awk '$1 == "#define" && $2 == "NODE_PATCH_VERSION" {print $3}' "$header")
+  [[ "$major" == 22 && "$minor" =~ ^[0-9]{1,3}$ && "$patch" =~ ^[0-9]{1,3}$ ]] || { fail '旧 Node 版本头格式不受支持。'; return 1; }
+  release="v$major.$minor.$patch"
+  reference="$INSTALL_TEMP/verified-node"
+  fetch_node "$release" "$reference" || return 1
+  cmp -s -- "$APP_ROOT/runtime/node/bin/node" "$reference/bin/node" || { fail '旧 Node 与官方二进制不一致，未执行升级或停止服务。'; return 1; }
+  # 不跟随链接；仅加固运行时，不改数据、配置或已有服务。
+  chown -hR "$(id -u):$(id -g)" "$APP_ROOT/runtime" || return 1
+  find "$APP_ROOT/runtime" -type d -exec chmod u-s,g-s,go-w {} + || return 1
+  find "$APP_ROOT/runtime" -type f -exec chmod u-s,g-s,go-w {} + || return 1
+  runtime_layout && runtime_is_trusted || { fail '运行环境权限加固失败。'; return 1; }
+  # 首次迁移的 root 校验始终使用刚下载并校验的独立 Node，而不是旧文件。
+  NODE_BIN="$reference/bin/node"
+}
+
 install_node() {
   say '2/6 安装独立 Node.js 22 运行环境…'
   NODE_BIN="$APP_ROOT/runtime/node/bin/node"
-  if [[ -x "$NODE_BIN" ]] && "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; then return; fi
-  download 'https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt' "$INSTALL_TEMP/SHASUMS256.txt" || { fail 'Node.js 校验清单下载失败。'; return 1; }
-  local checksum archive
-  read -r checksum archive < <(awk '$2 ~ /^node-v22\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$/ { print $1, $2; exit }' "$INSTALL_TEMP/SHASUMS256.txt") || { fail '无法识别 Node.js 下载版本。'; return 1; }
-  [[ "$checksum" =~ ^[a-fA-F0-9]{64}$ && "$archive" =~ ^node-v22\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz$ ]] || { fail 'Node.js 校验清单格式无效。'; return 1; }
-  download "https://nodejs.org/dist/latest-v22.x/$archive" "$INSTALL_TEMP/node.tar.xz" || { fail 'Node.js 下载失败。'; return 1; }
-  printf '%s  %s\n' "$checksum" "$INSTALL_TEMP/node.tar.xz" | sha256sum -c - >"$INSTALL_TEMP/checksum.log" 2>&1 || { fail 'Node.js 校验失败，请重新运行，程序不会使用未通过校验的文件。'; return 1; }
-  install -d -o root -g root -m 755 "$APP_ROOT/runtime" "$APP_ROOT/runtime/node"
-  tar -xJf "$INSTALL_TEMP/node.tar.xz" -C "$APP_ROOT/runtime/node" --strip-components=1
+  if [[ -x "$NODE_BIN" ]]; then
+    prepare_node_runtime || return 1
+  else
+    [[ ! -L "$APP_ROOT/runtime" ]] && { [[ ! -e "$APP_ROOT/runtime" ]] || trusted_directory "$APP_ROOT/runtime"; } || { fail '已有运行环境父目录不安全，未安装或修改其目标。'; return 1; }
+    fetch_node latest-v22.x "$INSTALL_TEMP/new-node" || return 1
+    install -d -o root -g root -m 755 "$APP_ROOT/runtime" || return 1
+    [[ ! -e "$APP_ROOT/runtime/node" && ! -L "$APP_ROOT/runtime/node" ]] || { fail '已有不完整运行环境，请先在本机检查。'; return 1; }
+    mv "$INSTALL_TEMP/new-node" "$APP_ROOT/runtime/node" || return 1
+  fi
   "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || { fail 'Node.js 不能在此系统运行。'; return 1; }
 }
 
@@ -295,6 +369,7 @@ install_application() {
   install -m 644 "$EVENTLENS_SOURCE"/lib/*.js "$APP_ROOT/app/lib/"
   install -m 644 "$EVENTLENS_SOURCE"/public/* "$APP_ROOT/app/public/"
   install -m 644 "$EVENTLENS_SOURCE/data/seed-campaigns.json" "$EVENTLENS_SOURCE/data/seed-snapshots.json" "$APP_ROOT/app/data/"
+  install -m 644 "$EVENTLENS_SOURCE/install-linux.sh" "$APP_ROOT/installer.sh"
   "$NODE_BIN" --check "$APP_ROOT/app/server.js"
 }
 
@@ -334,7 +409,7 @@ Group=$SERVICE_USER
 $bind_capability
 WorkingDirectory=$APP_ROOT/app
 EnvironmentFile=$CONFIG_DIR/eventlens.env
-ExecStart=$NODE_BIN $APP_ROOT/app/server.js --server
+ExecStart=$APP_ROOT/runtime/node/bin/node $APP_ROOT/app/server.js --server
 Restart=on-failure
 RestartSec=5
 KillMode=control-group
@@ -366,6 +441,20 @@ check_health() {
 
 main() {
   local check_only=0
+  if [[ ${1:-} == --https ]]; then
+    [[ $# -eq 2 ]] || { fail '用法：sudo bash /opt/eventlens/installer.sh --https 服务器公网IPv4'; return 1; }
+    [[ $EUID -eq 0 ]] || { fail 'HTTPS 配置需要 root 或 sudo 权限。'; return 1; }
+    umask 077
+    INSTALL_TEMP=$(mktemp -d /tmp/eventlens-https.XXXXXX) || return 1
+    trap cleanup EXIT
+    exec 9>/run/lock/eventlens-install.lock
+    flock -n 9 || { fail '另一个安装、升级或续期任务正在运行。'; return 1; }
+    NODE_BIN="$APP_ROOT/runtime/node/bin/node"
+    prepare_node_runtime || return 1
+    "$NODE_BIN" "$APP_ROOT/app/lib/linux-upgrade.js" check-install "$APP_ROOT" "$DATA_DIR" "$CONFIG_DIR" "$UNIT_FILE" >/dev/null || return 1
+    "$NODE_BIN" "$APP_ROOT/app/lib/linux-https.js" enable "$2"
+    return
+  fi
   if [[ ${1:-} == --upgrade ]]; then
     [[ $# -eq 1 ]] || { fail '升级模式不需要 IP、端口或账号参数，将保留原配置。'; return 1; }
     upgrade_main; return

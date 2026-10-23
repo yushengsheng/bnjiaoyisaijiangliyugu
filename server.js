@@ -1,4 +1,6 @@
 const http = require("node:http");
+const https = require("node:https");
+const { readTlsConfig, loadTlsOptions } = require("./lib/tls");
 const url = require("node:url");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -205,9 +207,10 @@ function requiresExactSubTrack(campaign) {
 function createServer({
   remoteAccess = serverMode,
   accessPassword = process.env.EVENTLENS_ACCESS_PASSWORD || "",
-  accessUsername = process.env.EVENTLENS_ACCESS_USERNAME || "eventlens"
+  accessUsername = process.env.EVENTLENS_ACCESS_USERNAME || "eventlens",
+  tlsConfig = remoteAccess ? readTlsConfig() : null
 } = {}) {
-  return http.createServer(async (req, res) => {
+  const listener = async (req, res) => {
     if (!requireLocalRequest(req, res, remoteAccess)) return;
     if (!requireAccessPassword(req, res, accessPassword, accessUsername)) return;
 
@@ -495,7 +498,11 @@ function createServer({
       else if (statusCode >= 500) console.error("Server Error:", error);
       return sendError(res, statusCode, error.statusCode ? error.message : "服务器内部错误", error.message);
     }
-  });
+  };
+  if (!tlsConfig) return http.createServer(listener);
+  const server = https.createServer(loadTlsOptions(tlsConfig), listener);
+  server.reloadTls = () => server.setSecureContext(loadTlsOptions(tlsConfig));
+  return server;
 }
 
 const server = createServer();
@@ -523,7 +530,7 @@ if (require.main === module) {
     server.listen(PORT, HOST, () => {
       console.log("\n======================================================");
       console.log(`  EventLens ${serverMode ? "服务器" : "本地"}交易赛分析服务已启动`);
-      console.log(serverMode ? `  访问地址: http://<服务器IP>:${PORT}` : `  访问地址: http://${HOST}:${PORT}`);
+      console.log(serverMode ? `  访问地址: ${server.reloadTls ? "https" : "http"}://<服务器IP>:${PORT}` : `  访问地址: http://${HOST}:${PORT}`);
       console.log(`  排行榜自动更新: ${settings.autoUpdateEnabled ? `每 ${schedulerIntervalMinutes} 分钟` : "已关闭（仅手动）"}`);
       console.log(serverMode ? `  已开放远程访问；访问密码${process.env.EVENTLENS_ACCESS_PASSWORD ? "已设置" : "未设置"}` : "  服务仅监听本机回环地址，不接受局域网或公网访问");
       console.log("======================================================\n");
@@ -533,6 +540,10 @@ if (require.main === module) {
     process.exit(1);
   });
 
+  if (server.reloadTls) process.on("SIGHUP", () => {
+    try { server.reloadTls(); console.log("HTTPS 证书已重新加载"); }
+    catch (_) { console.error("HTTPS 证书重新加载失败，继续使用原证书；请在本机检查证书文件"); }
+  });
   process.on("SIGINT", requestShutdown);
   process.on("SIGTERM", requestShutdown);
 }

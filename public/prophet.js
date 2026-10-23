@@ -103,15 +103,20 @@
       updateControls();
     }
   }
+  function updateWeekState() {
+    if (!snapshot) return;
+    const week = snapshot.week;
+    const now = Date.now();
+    const state = now < week.startMs ? "未开始" : now >= week.endMs ? "已结束" : "本周";
+    el("weeklyTitle").textContent = `第 ${week.weekIndex} 周 · ${state}`;
+    el("weeklyPeriod").textContent = `${date(week.startMs)} — ${date(week.endMs)}`;
+  }
   function render(data) {
     snapshot = data;
     if (!snapshot) return;
     el("prophetTime").textContent = `采集时间 · ${date(snapshot.collectedAt)}`;
     el("seasonPeriod").textContent = snapshot.seasonId;
-    const week = snapshot.week;
-    const state = Date.now() < week.startMs ? "未开始" : Date.now() >= week.endMs ? "已结束" : "本周";
-    el("weeklyTitle").textContent = `第 ${week.weekIndex} 周 · ${state}`;
-    el("weeklyPeriod").textContent = `${date(week.startMs)} — ${date(week.endMs)}`;
+    updateWeekState();
     renderBoard("season", snapshot.season);
     renderBoard("weekly", snapshot.weekly);
   }
@@ -187,8 +192,12 @@
     el("prophetPeriod").textContent = `${date(activity.startTime)} — ${date(activity.endTime)}`;
     el("prophetActivityState").textContent = activity.status === "history" ? "已过期 · 仅手动更新" : activity.status === "upcoming" ? "即将开始" : "进行中 · 仅手动更新";
     el("prophetActivityState").className = `status-badge ${activity.status === "active" ? "active-status" : "history-status"}`;
+    updateWeekState();
     if (!initialization) initialization = init();
     return initialization;
   }
   document.addEventListener("eventlens:prophet-open", open);
+  // 只校正本地时间标签，断网也不把旧周当作本周；不触发任何数据采集。
+  document.addEventListener("visibilitychange", updateWeekState);
+  setInterval(updateWeekState, 60_000);
 })();

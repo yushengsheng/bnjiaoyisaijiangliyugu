@@ -10,7 +10,7 @@
 bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/latest/download/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
 ```
 
-脚本校验 SHA-256 后调用新版安装包的 `--upgrade`。也可上传新版安装包后运行 `sudo bash EventLens-Linux-v2.2.1.run --upgrade`。
+脚本校验 SHA-256 后调用新版安装包的 `--upgrade`。也可上传新版安装包后运行 `sudo bash EventLens-Linux-v2.2.2.run --upgrade`。
 
 升级会短暂停止服务，备份旧程序、运行数据和配置，然后切换新版并用原端口和原账号在本机做健康检查。失败时回滚旧程序；不会用发布样本覆盖已有数据，不会重设网页账号，不会重装 Node/浏览器或修改服务、自动更新设置、防火墙。原服务停止时，升级验收后仍保持停止；开机启动状态保持原样。恢复备份只保存在服务器程序目录的 `backups` 下，含敏感配置，仅管理员可读，不应上传或公开。
 
@@ -20,7 +20,7 @@ bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto 
 
 初次使用建议选择 **Ubuntu 24.04、x86_64 / amd64、2 GB 或更多内存** 的云服务器。已有服务器也支持 Ubuntu 22.04+、Debian 12+、Rocky/AlmaLinux/RHEL 9+、Fedora 40+。需要普通 systemd 系统、root 或 sudo 权限，以及能下载 Node.js 和 Chrome 的网络；目前安装包不支持 ARM 服务器和未启用 systemd 的容器。
 
-下载提供的 **EventLens-Linux-v2.2.1.run**。这是单文件安装包，里面已经包含本次修改后的完整程序，不需要从 GitHub 下载代码，也不需要先安装 Node.js。
+下载提供的 **EventLens-Linux-v2.2.2.run**。这是单文件安装包，里面已经包含本次修改后的完整程序，不需要从 GitHub 下载代码，也不需要先安装 Node.js。
 
 ## 2. 登录服务器并上传安装包
 
@@ -42,7 +42,7 @@ ls EventLens-Linux-*.run
 推荐这样输入，**把大写提示词替换成自己的值，不要原样复制提示词**：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 你设置的网页用户名
+sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 你设置的网页用户名
 ```
 
 如果已经使用 root 登录，可以去掉命令开头的 `sudo`。
@@ -60,7 +60,7 @@ sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 你设置的
 你要求的“命令 + IP + 端口 + 用户名 + 密码”完整形式也支持：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 网页用户名 '你的网页密码'
+sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 网页用户名 '你的网页密码'
 ```
 
 密码有空格或特殊字符时需正确引用；这里的示例单引号要求密码本身不含单引号。推荐前一种隐藏输入方式，它不会把网页密码写进命令历史。
@@ -114,11 +114,11 @@ sudo firewall-cmd --reload
 http://你的服务器公网IPv4:3000
 ```
 
-请使用 `http://`，目前安装脚本没有配置 HTTPS。浏览器会弹出账号密码框，填写安装时设置的**网页用户名和网页密码**。不要填写服务器 root 密码、SSH 密码或币安账号密码。
+默认安装使用 `http://`；显式启用下方 HTTPS 后，原端口改用 `https://`。浏览器会弹出账号密码框，填写安装时设置的**网页用户名和网页密码**。不要填写服务器 root 密码、SSH 密码或币安账号密码。
 
 登录后即可添加活动链接、刷新行情和抓取排行榜。公告和抓榜均通过 `www.bsmkweb.cc` 导航适配当前可访问的域名。
 
-账号密码在 HTTP 下不是加密传输；需要在公网长期使用时，建议给域名配置 HTTPS 反向代理。
+账号密码在 HTTP 下不是加密传输；公网长期使用应启用 HTTPS。无需域名，可使用下方可信 IP 证书。
 
 ## 6. 常用操作
 
@@ -184,3 +184,35 @@ sudo systemctl restart eventlens
 | 一直提示账号密码错误 | 核对网页账号；忘记后按第 7 步在服务器本机修改，再重启 |
 | 网页正常但抓榜失败 | 先查看网页显示的具体错误，再确认服务器能访问公告导航和活动页面；不要手动写死镜像域名 |
 | 提示服务健康检查失败 | 用运行状态和运行记录命令查看原因；本次失败的服务会被停止，可修复依赖后重试 |
+
+
+## 可选 HTTPS：可信 IP 证书＋自动续期（v2.2.2 起）
+
+本节适用于 v2.2.2 或更新版本完成安装/升级后。不会随普通升级自动开启 HTTPS。
+
+- 不需要域名。证书绑定**服务器稳定公网 IPv4**，不是访问者的出口 IP；你从不同客户端 IP 访问不受限制。
+- 网页端口、账号密码、活动数据和自动采集设置保持原样；开启后使用 `https://服务器公网IP:原端口`，不再使用旧的 `http://` 地址。一个端口不同时提供 HTTP 和 HTTPS。
+- 服务器需具备新版 Certbot（`certbot --help all` 中包含 `--ip-address` 和 `--required-profile`），按 [Certbot 官方说明](https://certbot.eff.org/instructions) 安装；脚本不会自动安装额外软件。
+- Let’s Encrypt 的 IP 证书是约 6 天的短期证书。使用 HTTP-01 验证，公网 **TCP 80 必须持续可达且空闲**，包括后续续期。若原网页就在 80，需另行设计验证入口，本脚本不会停掉它或擅改端口。云安全组、防火墙由你确认放行，程序不会修改它们。
+- 显式执行下列命令将向 Let’s Encrypt 提交所填服务器 IP，创建无邮箱 ACME 账号并同意其服务条款；不会提交网页账号密码或项目数据。
+
+在服务器上显式启用（将占位文字换成服务器公网 IPv4）：
+
+```bash
+sudo bash /opt/eventlens/installer.sh --https 服务器公网IPv4
+```
+
+先验证原安装与服务；签发、证书加载或服务检查失败时不覆盖原数据，启用切换失败则恢复原配置。原配置备份仅保存在本机程序目录 `backups` 下。
+
+续期使用独立的 `eventlens-cert-renew.timer`，每天检查两次并随机错峰；仅在签发新证书后热加载，不中断正在进行的采集，也不会启动原本停止的网页服务。新证书无效或加载检查失败时恢复旧证书，下一轮重试；**旧证书最终过期前必须排除续期故障**，可在服务器本机查看：
+
+```bash
+sudo systemctl status eventlens-cert-renew.timer eventlens-cert-renew.service
+sudo journalctl -u eventlens-cert-renew.service --no-pager -n 30
+```
+
+私钥副本为 root 管理、仅服务组可读（0640）；原配置文件保持 0600，ACME 原始证书目录仅管理员可读。自动续期、安装和升级共用互斥锁。普通升级识别 HTTPS 并验证证书，不会降级到 HTTP 或重置账号。
+
+已有自备证书也可在原环境文件中设置 `EVENTLENS_TLS_CERT`、`EVENTLENS_TLS_KEY`（绝对路径）及 `EVENTLENS_TLS_HOST`（证书覆盖的服务器 IP/域名），重启生效；私钥须仅管理员/服务组可读。三项必须完整，配置错误会拒绝启动，不会回退明文。自备证书的续期由提供方管理；成功更新后向主进程发送 SIGHUP 重新加载，不要同时启用上述托管脚本覆盖自备证书。
+
+参考：[Let’s Encrypt IP 证书说明](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability/)、[Certbot 参数及续期文档](https://eff-certbot.readthedocs.io/en/stable/using.html)。可信 IP 证书管理已做隔离流程和故障回滚测试；公网真实签发及服务器 systemd 续期尚需部署时验收。

@@ -93,6 +93,7 @@ function installation(mode = "success", active = true) {
   fs.writeFileSync(unit, `# Managed by EventLens Linux installer\n[Service]\nUser=eventlens\nGroup=eventlens\nWorkingDirectory=${app}/app\nEnvironmentFile=${cfg}/eventlens.env\nExecStart=${app}/runtime/node/bin/node ${app}/app/server.js --server\n`);
   for (const name of ["campaigns.json", "snapshots.json", "snapshot-history.json", "settings.json", "prophet.json"]) fs.writeFileSync(path.join(data, name), JSON.stringify({ original: name, autoUpdateEnabled: false }));
   const originals = Object.fromEntries(fs.readdirSync(data).map(name => [name, fs.readFileSync(path.join(data, name))]));
+  if (mode.startsWith("https-")) fs.appendFileSync(path.join(cfg, "eventlens.env"), `EVENTLENS_TLS_CERT=${app}/tls/current/fullchain.pem\nEVENTLENS_TLS_KEY=${app}/tls/current/privkey.pem\nEVENTLENS_TLS_HOST=203.0.113.10\n`);
   const originalConfig = fs.readFileSync(path.join(cfg, "eventlens.env"));
   if (mode.startsWith("legacy")) {
     fs.unlinkSync(path.join(app, ".eventlens-installed"));
@@ -102,7 +103,7 @@ function installation(mode = "success", active = true) {
   if (mode === "legacy-other-app") fs.writeFileSync(path.join(app, "app/package.json"), '{"name":"other-app","version":"2.1.2"}');
   const originalUnit = fs.readFileSync(unit);
   const runtime = path.join(app, "runtime/node/bin/node");
-  fs.writeFileSync(runtime, `#!/bin/bash\nif [[ "$2" == health ]]; then\n  v=$(${quote(process.execPath)} -p 'require(process.argv[1]).version' ${quote(path.join(app, "app/package.json"))})\n  if [[ ${quote(mode)} == bad-health && "$v" != 2.1.2 ]]; then exit 1; fi\n  if [[ ${quote(mode)} == legacy-bad-health ]]; then exit 1; fi\n  printf '%s\\n' "$v" >>${quote(path.join(dir, "health-versions"))}\n  exit 0\nfi\nexec ${quote(process.execPath)} "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(runtime, `#!/bin/bash\nif [[ "$2" == health ]]; then\n  v=$(${quote(process.execPath)} -p 'require(process.argv[1]).version' ${quote(path.join(app, "app/package.json"))})\n  if [[ ( ${quote(mode)} == bad-health || ${quote(mode)} == https-bad-health ) && "$v" != 2.1.2 ]]; then exit 1; fi\n  if [[ ${quote(mode)} == legacy-bad-health ]]; then exit 1; fi\n  printf '%s\\n' "$v" >>${quote(path.join(dir, "health-versions"))}\n  exit 0\nfi\nexec ${quote(process.execPath)} "$@"\n`, { mode: 0o755 });
   const activeFile = path.join(dir, "active");
   fs.writeFileSync(activeFile, active ? "1" : "0");
   if (mode === "external") fs.writeFileSync(unit, "unrelated service\n");
@@ -296,7 +297,7 @@ test("识别记录不包含凭据，校验通过后即使旧服务停止也可�
   } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test("兼容官方 Node tar 保留的构建 UID，但仍拒绝可被其他用户写入的运行时", unix, () => {
+test("Node 执行前由 shell 完成旧 UID 加固，JS 校验不再豁免非管理员归属", unix, () => {
   const f = installation("legacy");
   const original = fs.lstatSync;
   try {
@@ -308,8 +309,20 @@ test("兼容官方 Node tar 保留的构建 UID，但仍拒绝可被其他用户
       if (path.resolve(file) === runtime) stat.uid = process.getuid() + 1;
       return stat;
     };
-    assert.equal(upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), "legacy");
+    assert.throws(() => upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), /运行环境/);
     fs.chmodSync(runtime, 0o777);
     assert.throws(() => upgrade.checkInstall(f.app, f.data, f.cfg, f.unit), /权限/);
   } finally { fs.lstatSync = original; fs.rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+for (const mode of ["https-success", "https-bad-health"]) test(`HTTPS 安装的升级事务 ${mode} 保留原协议配置、证书路径、端口和数据`, unix, () => {
+  // shell 事务的健康命令为隔离模拟；真实 TLS 验证另由 tls.test.js 覆盖。
+  const f = installation(mode);
+  try {
+    assert.equal(f.result.status === 0, mode === "https-success", f.result.stderr);
+    assert.deepEqual(fs.readFileSync(path.join(f.cfg, "eventlens.env")), f.originalConfig);
+    assert.equal(upgrade.readConfig(path.join(f.cfg, "eventlens.env"), f.data).EVENTLENS_TLS_HOST, "203.0.113.10");
+    for (const [name, contents] of Object.entries(f.originals)) assert.deepEqual(fs.readFileSync(path.join(f.data, name)), contents);
+    assert.equal(fs.readFileSync(f.activeFile, "utf8"), "1");
+  } finally { fs.rmSync(f.dir, { recursive: true, force: true }); }
 });

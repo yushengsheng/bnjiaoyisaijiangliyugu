@@ -57,8 +57,9 @@ test("动态抓榜目标仍校验公网地址，拒绝导航至内网", async ()
 
 test("跳过已加载完成的脚本中转页，等待真实币安应用后再选择抓榜域名", async () => {
   let attempts = 0;
-  const resolved = await resolveLeaderboardUrl(async method => {
+  const resolved = await resolveLeaderboardUrl(async (method, params) => {
     if (method === "Page.navigate") return {};
+    if (params.awaitPromise) return { result: { value: false } };
     attempts++;
     return { result: { value: attempts < 3
       ? { href: "https://intermediate-site.com/jsredirect/zh-CN/support/announcement/list/93", ready: "complete", app: false }
@@ -77,4 +78,48 @@ test("导航未跳转时不使用存储的旧域名兜底", async () => {
   }, "https://old-domain.com/activity/trading-competition/test/Main-Reward", {
     timeoutMs: 5, pause: () => new Promise(resolve => setTimeout(resolve, 2))
   }), /未能提供当前可用的抓榜域名/);
+});
+
+
+test("空白/旧标记缺失的落地页只有同源公开接口验证通过才可用，保留活动路径", async () => {
+  const calls = [];
+  const validated = [];
+  const input = "https://old.example/activity/trading-competition/example/Main-Reward?source=fixture";
+  const resolved = await resolveLeaderboardUrl(async (method, params) => {
+    calls.push([method, params]);
+    if (method === "Page.navigate") return {};
+    if (params.awaitPromise) return { result: { value: true } };
+    return { result: { value: { href: "https://current.example/", ready: "loading", app: false } } };
+  }, input, { pause: async () => {}, validateTarget: async url => { validated.push(url); } });
+  assert.equal(resolved, input.replace("old.example", "current.example"));
+  assert.deepEqual(validated, [resolved]);
+  const probes = calls.filter(([, params]) => params.awaitPromise);
+  assert.equal(probes.length, 1);
+  assert.match(probes[0][1].expression, /credentials: "omit"/);
+  assert.match(probes[0][1].expression, /redirect: "error"/);
+  assert.match(probes[0][1].expression, /location.origin === origin/);
+});
+
+test("接口探测失败的中转页不被采用，每个来源最多探测一次", async () => {
+  let probes = 0;
+  await assert.rejects(resolveLeaderboardUrl(async (method, params) => {
+    if (method === "Page.navigate") return {};
+    if (params.awaitPromise) { probes++; return { result: { value: false } }; }
+    return { result: { value: { href: "https://intermediate.example/jsredirect/", ready: "complete", app: false } } };
+  }, "https://old.example/activity/trading-competition/example/Main-Reward", {
+    timeoutMs: 15, pause: () => new Promise(resolve => setTimeout(resolve, 2)), validateTarget: async () => {}
+  }), /未能提供当前可用的抓榜域名/);
+  assert.equal(probes, 1);
+});
+
+test("CMS 探测前也必须验证公网目标，不能用探测绕过内网防护", async () => {
+  let probes = 0;
+  await assert.rejects(resolveLeaderboardUrl(async (method, params) => {
+    if (method === "Page.navigate") return {};
+    if (params.awaitPromise) { probes++; return { result: { value: true } }; }
+    return { result: { value: { href: "https://private.example/", ready: "loading", app: false } } };
+  }, "https://old.example/activity/trading-competition/example/Main-Reward", {
+    pause: async () => {}, validateTarget: async () => { throw new Error("内网目标"); }
+  }), /内网目标/);
+  assert.equal(probes, 0);
 });

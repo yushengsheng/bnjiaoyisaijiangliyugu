@@ -163,3 +163,70 @@ test("损坏 JSON 会保留备份并停止覆盖", async () => {
   assert.equal(fs.readFileSync(path.join(dataDir, backups[0]), "utf8"), "{broken");
   assert.equal(fs.readFileSync(path.join(dataDir, "campaigns.json"), "utf8"), "{broken");
 });
+
+test("同一损坏内容串行、并发和模块重载后只备份一次，新损坏版本单独保留", async () => {
+  const file = path.join(dataDir, "prophet.json");
+  const raw = Buffer.from([0x7b, 0x22, 0xff, 0x3a]);
+  fs.writeFileSync(file, raw);
+  const read = () => assert.rejects(storage.getProphetSnapshot(), /已保留备份/);
+  await Promise.all(Array.from({ length: 15 }, read));
+  await read();
+  const before = fs.readdirSync(dataDir).filter(n => n.startsWith("prophet.json.corrupt-"));
+  assert.equal(before.length, 1);
+  assert.deepEqual(fs.readFileSync(path.join(dataDir, before[0])), raw);
+  assert.equal(fs.statSync(path.join(dataDir, before[0])).mode & 0o777, 0o600);
+  delete require.cache[require.resolve("../lib/storage")];
+  await assert.rejects(require("../lib/storage").getProphetSnapshot(), /已保留备份/);
+  assert.equal(fs.readdirSync(dataDir).filter(n => n.startsWith("prophet.json.corrupt-")).length, 1);
+  fs.writeFileSync(file, "{another-version");
+  await read();
+  assert.equal(fs.readdirSync(dataDir).filter(n => n.startsWith("prophet.json.corrupt-")).length, 2);
+  assert.equal(fs.readFileSync(file, "utf8"), "{another-version");
+  assert.equal(fs.readdirSync(dataDir).some(n => n.endsWith(".tmp")), false);
+});
+
+test("损坏备份写入失败不报告成功，恢复写权限后可重试且不改原文件", async t => {
+  const file = path.join(dataDir, "prophet.json");
+  fs.writeFileSync(file, "{backup-failure-fixture");
+  const promises = require("node:fs/promises");
+  const write = promises.writeFile;
+  const mock = t.mock.method(promises, "writeFile", async (name, ...args) => {
+    if (String(name).includes(".corrupt-")) throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
+    return write(name, ...args);
+  });
+  await assert.rejects(storage.getProphetSnapshot(), error => /备份未成功/.test(error.message) && !/已保留备份/.test(error.message));
+  assert.equal(fs.readFileSync(file, "utf8"), "{backup-failure-fixture");
+  mock.mock.restore();
+  await assert.rejects(storage.getProphetSnapshot(), /已保留备份/);
+});
+
+test("不支持硬链接时仍去重备份，复制失败不谎报成功", async t => {
+  const file = path.join(dataDir, "prophet.json");
+  fs.writeFileSync(file, "{copy-failure-fixture");
+  const promises = require("node:fs/promises");
+  t.mock.method(promises, "link", async () => { throw Object.assign(new Error("fixture"), { code: "ENOTSUP" }); });
+  const mock = t.mock.method(promises, "copyFile", async () => { throw Object.assign(new Error("fixture"), { code: "EACCES" }); });
+  await assert.rejects(storage.getProphetSnapshot(), /备份未成功/);
+  mock.mock.restore();
+  await assert.rejects(storage.getProphetSnapshot(), /已保留备份/);
+  await assert.rejects(storage.getProphetSnapshot(), /已保留备份/);
+  assert.equal(fs.readdirSync(dataDir).some(n => n.endsWith(".tmp")), false);
+});
+
+test("已存在备份内容不符或为符号链接时不覆盖、不误报成功", async () => {
+  const crypto = require("node:crypto");
+  const file = path.join(dataDir, "prophet.json");
+  const raw = "{existing-bad-backup-fixture";
+  fs.writeFileSync(file, raw);
+  const backup = `${file}.corrupt-${crypto.createHash("sha256").update(raw).digest("hex")}`;
+  fs.writeFileSync(backup, "untouched-existing-backup");
+  await assert.rejects(storage.getProphetSnapshot(), /备份未成功/);
+  assert.equal(fs.readFileSync(backup, "utf8"), "untouched-existing-backup");
+  if (process.platform !== "win32") {
+    fs.unlinkSync(backup);
+    fs.symlinkSync(file, backup);
+    await assert.rejects(storage.getProphetSnapshot(), /备份未成功/);
+    assert.equal(fs.lstatSync(backup).isSymbolicLink(), true);
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), raw);
+});

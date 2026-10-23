@@ -30,7 +30,8 @@ function fixture({ total = 8000, change = data => data } = {}) {
     };
     return reply(change(data, { endpoint, rank, calls }));
   };
-  return { calls, fetchImpl, now: () => 2500, pause: async () => {} };
+  return { calls, fetchImpl, now: () => 2500, pause: async () => {},
+    resolveOrigin: async () => "https://current.fixture.com", invalidateOrigin: () => {} };
 }
 
 test("积分比较保留高精度、大整数、负收益和负零", () => {
@@ -142,6 +143,28 @@ test("网络、限流、奖励协议和部分榜单失败均不会返回成功�
 test("跨周采集不落盘旧周数据", async () => {
   let ticks = 0;
   await assert.rejects(collect({ ...fixture(), now: () => ticks++ ? 3000 : 2500 }), /切换周次/);
+});
+
+test("单次采集固定导航来源，故障清除缓存但不重试或切换来源", async () => {
+  const input = fixture();
+  let resolves = 0;
+  let invalidates = 0;
+  input.resolveOrigin = async () => { resolves++; return "https://current.fixture.com"; };
+  input.invalidateOrigin = origin => { assert.equal(origin, "https://current.fixture.com"); invalidates++; };
+  const original = input.fetchImpl;
+  input.fetchImpl = (url, options) => {
+    assert.equal(new URL(url).origin, "https://current.fixture.com");
+    assert.equal(options.redirect, "error");
+    return original(url, options);
+  };
+  assert.equal((await collect(input)).sourceUrl, "https://www.bsmkweb.cc/zh-CN/prophet/leaderboard?seasonId=prophet_1019_s1");
+  assert.equal(resolves, 1);
+  assert.equal(invalidates, 0);
+  let requests = 0;
+  input.fetchImpl = async () => { requests++; throw new Error("ECONNRESET"); };
+  await assert.rejects(collect(input), /连接失败/);
+  assert.equal(requests, 1);
+  assert.equal(invalidates, 1);
 });
 
 test("逐名明细按实际名次定位完整50条，搜索只返回目标，且不泄漏昵称和游标", async () => {

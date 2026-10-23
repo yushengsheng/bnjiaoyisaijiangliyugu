@@ -2,7 +2,7 @@
 
 币安交易赛排行榜、奖励和买卖价差分析工具。默认在本地运行，也支持部署到 Linux 服务器，通过 IP 和端口访问。活动配置、排行榜快照和历史记录保存在运行程序的电脑或服务器上，不需要浏览器扩展。
 
-正式版下载：[EventLens Local v2.2.1](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.2.1)。本地版下载 `EventLens-Local-v2.2.1.zip` 后解压，仍需 Node.js 22+；Linux 新安装和升级使用 `.run`。`SHA256SUMS` 用于核对发布文件，旧版归档保留。
+正式版下载：[EventLens Local v2.2.2](https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/tag/v2.2.2)。本地版下载 `EventLens-Local-v2.2.2.zip` 后解压，仍需 Node.js 22+；Linux 新安装和升级使用 `.run`。`SHA256SUMS` 用于核对发布文件，旧版归档保留。
 
 ## 功能
 
@@ -15,7 +15,8 @@
 - 行情不可用时明确显示不可用，不会生成假价格、假盘口或假排行榜。
 - 保存最近 500 次成功快照，用于本地趋势和 CSV 导出。
 - 可勾选开启或关闭每 30 分钟排行榜自动更新；关闭后保留手动更新，选择会保存到本机并在下次启动时恢复。
-- 神算子与交易赛共用原首页的活动列表，按赛季结束时间归入“已过期”。展示赛季及本周各奖励档位的末位积分与官方配置奖励，仅手动刷新；不会自动采集已过期项目。直接读取公开接口，无需浏览器或登录；定位校验失败时回退逐页采集，失败保留上次成功数据。
+- 神算子与交易赛共用原首页的活动列表，按赛季结束时间归入“已过期”。展示赛季及本周各奖励档位的末位积分与官方配置奖励，仅手动刷新；不会自动采集已过期项目。先用独立临时浏览器从神算子导航入口解析当前可用域名（内存缓存 5 分钟），再串行读取公开 JSON 接口，无需登录；定位校验失败时回退逐页采集，失败保留上次成功数据，不在网络故障时反复重试。
+- 神算子入口：<https://www.bsmkweb.cc/zh-CN/prophet/leaderboard?seasonId=prophet_1019_s1>。不再依赖固定旧镜像域名；接口连接失败后，下次手动更新重新解析来源。
 - 神算子奖励名次可点击展开逐名积分，每页 50 条，支持前后翻页和单名次搜索。明细按需读取，不另存全榜或定时获取；积分保留官方精度，明细与门槛分别标记采集时间。
 - 自动区分源数据时间、本地采集时间和最近检查时间。
 - 公告列表和详情统一从 `www.bsmkweb.cc` 获取，跟随导航网站的重定向，不维护固定备用公告域名。公告入口：<https://www.bsmkweb.cc/zh-CN/support/announcement/list/93>。
@@ -86,7 +87,7 @@ http://127.0.0.1:3000
 推荐使用一键安装包，上传服务器后执行：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 网页用户名
+sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 网页用户名
 ```
 
 随后隐藏输入网页密码；也支持在用户名后增加第四个参数作为密码。脚本自动准备运行环境、浏览器和开机启动，安装成功后通过 `http://你的服务器公网IPv4:3000` 访问。完整上传、安装、端口放行和排错步骤见 [Linux 小白安装教程](LINUX-安装教程.md)。安装包由 `npm run package:linux` 生成，使用本地完整源码，不依赖 GitHub 上是否已同步。
@@ -99,7 +100,7 @@ sudo bash EventLens-Linux-v2.2.1.run 你的服务器公网IPv4 3000 网页用户
 bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/latest/download/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
 ```
 
-入口获取最新正式版升级脚本，脚本固定下载其配套版本并校验 SHA-256，再以 sudo 执行升级；不要重新填写安装参数。也可上传新版 `.run` 后执行 `sudo bash EventLens-Linux-v2.2.1.run --upgrade`。升级先备份、后切换程序，健康检查失败自动回滚旧程序，不重装 Node/浏览器，不改原配置或运行数据。支持原一键安装，以及固定目录、启动参数、配置和真实运行身份均匹配的旧安装；缺少旧标记时先认证验证原服务，成功后保存识别记录，不改服务文件。其他手动部署或 systemd 覆盖配置仍拒绝套用。备份保留在服务器本机程序目录的 `backups` 中，不自动删除。
+入口获取最新正式版升级脚本，脚本固定下载其配套版本并校验 SHA-256，再以 sudo 执行升级；不要重新填写安装参数。也可上传新版 `.run` 后执行 `sudo bash EventLens-Linux-v2.2.2.run --upgrade`。升级先备份、后切换程序，健康检查失败自动回滚旧程序，不重装 Node/浏览器，不改原配置或运行数据。旧 Node 权限不安全时，会下载同版本官方归档核对并加固权限；核对失败则在停服务前拒绝升级。支持原一键安装，以及固定目录、启动参数、配置和真实运行身份均匹配的旧安装；缺少旧标记时先认证验证原服务，成功后保存识别记录，不改服务文件。其他手动部署或 systemd 覆盖配置仍拒绝套用。备份保留在服务器本机程序目录的 `backups` 中，不自动删除。
 
 以下是保留的手动启动与部署方式：
 
@@ -123,7 +124,7 @@ export EVENTLENS_ACCESS_USERNAME=webadmin
 PORT=3000 npm run start:server
 ```
 
-密码保护覆盖页面、静态资源和全部 API。不设置时，能连接该端口的人可直接使用页面。公网密码访问请通过 HTTPS 反向代理，避免 HTTP 明文传输。
+密码保护覆盖页面、静态资源和全部 API。不设置时，能连接该端口的人可直接使用页面。公网密码访问应使用 HTTPS，避免 HTTP 明文传输。新版源码支持可选的同端口 HTTPS 和可信 IP 证书自动续期，不需要域名，不限制客户端来源 IP；启用方法见 Linux 教程。本地默认 HTTP 和现有配置不变。
 
 手动部署需要开机启动和进程退出后自动重启时，可使用 systemd。一键安装包已自动完成此配置，其实际路径见安装教程；以下为手动部署示例，假定项目在 `/opt/eventlens`，已创建普通用户 `eventlens`，该用户对 `data/` 有写权限，Node 位于 `/usr/bin/node`：
 

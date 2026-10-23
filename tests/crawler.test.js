@@ -199,3 +199,38 @@ test("源更新时间只来自上游元数据，不读取参与者记录或采�
   assert.equal(snapshot.rankingUpdatedAt, null);
   assert.equal(snapshot.collectedAt, "2026-09-12T03:00:00.000Z");
 });
+
+test("批次内活动到期或被移除时不再开始采集，保持串行和原调度周期", async () => {
+  const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
+  const realRequire = require("node:module").createRequire(path.join(__dirname, "../lib/crawler.js"));
+  let now = 10, running = 0, maxRunning = 0;
+  const calls = [], saved = [];
+  const records = [
+    { id: "first", name: "first", endTime: 100, landingUrl: "fixture", status: "active" },
+    { id: "expires", name: "expires", endTime: 20, landingUrl: "fixture", status: "active" },
+    { id: "removed", name: "removed", endTime: 100, landingUrl: "fixture", status: "active" },
+    { id: "last", name: "last", endTime: 100, landingUrl: "fixture", status: "active" }
+  ];
+  const storage = {
+    getCampaigns: async () => records,
+    getCampaignById: async id => {
+      const item = records.find(c => c.id === id);
+      if (id === "removed") return null;
+      return { ...item, status: now >= item.endTime ? "history" : "active" };
+    },
+    saveSnapshot: async id => saved.push(id), updateCampaign: async () => {}, markSnapshotCheck: async () => {}
+  };
+  const context = { module: { exports: {} }, URL, process, setTimeout, clearTimeout, setInterval, clearInterval,
+    require: name => name === "./storage" ? storage : realRequire(name),
+    reviewCrawl: async campaign => { maxRunning = Math.max(maxRunning, ++running); calls.push(campaign.id); now = 30; running--; return {}; }
+  };
+  const source = fs.readFileSync(path.join(__dirname, "../lib/crawler.js"), "utf8").replace("module.exports = {", "crawlLeaderboard = globalThis.reviewCrawl;\nmodule.exports = {");
+  vm.runInNewContext(source, context);
+  const scheduler = new context.module.exports.CrawlerScheduler();
+  await scheduler.runBatch();
+  assert.deepEqual(calls, ["first", "last"]);
+  assert.deepEqual(saved, calls);
+  assert.equal(maxRunning, 1);
+  assert.equal(scheduler.intervalMs, 30 * 60 * 1000);
+  assert.equal(scheduler.isRunning, false);
+});

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../public/prophet.js"), "utf8");
-function ui() {
+function ui({ clock = Date } = {}) {
   const elements = new Map();
   const nodes = [];
   function node() {
@@ -19,14 +19,16 @@ function ui() {
     return elements.get(id);
   }
   const calls = [];
+  const ticks = [];
+  const events = {};
   let fetchImpl = async url => ({ ok: true, status: 200, json: async () => url === "/api/session" ? { token: "fixture" } : { snapshot: null } });
-  const context = { Event, document: { getElementById: element, dispatchEvent() {}, createElement: node,
+  const context = { setInterval: (fn, ms) => ticks.push({ fn, ms }), Date: clock, Event, document: { getElementById: element, dispatchEvent() {}, addEventListener: (name, callback) => { events[name] = callback; }, createElement: node,
     querySelectorAll: selector => selector.includes("#seasonRows") || selector.includes("#weeklyRows")
       ? element(selector.includes("#seasonRows") ? "seasonRows" : "weeklyRows").children.map(row => row.children[0]?.children[0]).filter(Boolean)
       : nodes.filter(value => value.className.includes("prophet-data-action")) },
     fetch: (url, options) => { calls.push({ url, options }); return fetchImpl(url, options); } };
   vm.runInNewContext(source.replace('  document.addEventListener("eventlens:prophet-open", open);', "  globalThis.ui = { formatPoints, render, refresh, init, open, loadRange };"), context);
-  return { ...context.ui, element, calls, setFetch: impl => { fetchImpl = impl; } };
+  return { ...context.ui, element, calls, ticks, events, setFetch: impl => { fetchImpl = impl; } };
 }
 const board = { unit: "USDC", thresholds: [{ rankFrom: 1, rankTo: 1000, points: "152.6778000000000000", rewardAmount: "25" }] };
 const snapshot = { seasonId: "fixture-season", collectedAt: "2026-10-22T00:00:00Z",
@@ -172,4 +174,39 @@ test("刷新期间不重复提交，成功后更新两榜和采集时间", async
   assert.equal(app.element("weeklyRows").children.length, 1);
   assert.match(app.element("prophetTime").textContent, /采集时间/);
   assert.equal(app.element("prophetRefresh").disabled, false);
+});
+
+test("跨周重新显示只更新已结束标签，不重抓榜、不清除展开明细", async () => {
+  let now = Date.parse("2026-10-23T00:00:00Z");
+  class Clock extends Date { static now() { return now; } }
+  const app = ui({ clock: Clock });
+  const weekly = { weekIndex: 1, startMs: now - 1000, endMs: now + 1000 };
+  app.setFetch(async () => ({ ok: true, status: 200, json: async () => ({ snapshot: { ...snapshot, week: weekly } }) }));
+  const activity = { name: "神算子", startTime: "2026-10-21T00:00:00Z", endTime: "2026-11-16T00:00:00Z", status: "active" };
+  await app.open({ detail: activity });
+  assert.equal(app.element("weeklyTitle").textContent, "第 1 周 · 本周");
+  const rows = app.element("weeklyRows").children;
+  app.element("weeklyDetails").hidden = false;
+  now = weekly.endMs;
+  await app.open({ detail: activity });
+  assert.equal(app.element("weeklyTitle").textContent, "第 1 周 · 已结束");
+  assert.equal(app.element("weeklyRows").children, rows);
+  assert.equal(app.element("weeklyDetails").hidden, false);
+  assert.deepEqual(app.calls.map(c => c.url), ["/api/prophet"]);
+});
+
+
+test("周标签本地校时不依赖接口成功，恢复可见时立即校正，不触发采集", async () => {
+  let now = 100;
+  class Clock extends Date { static now() { return now; } }
+  const app = ui({ clock: Clock });
+  app.render({ ...snapshot, week: { weekIndex: 4, startMs: 150, endMs: 200 } });
+  app.setFetch(async () => { throw new Error("offline fixture"); });
+  assert.match(app.element("weeklyTitle").textContent, /未开始/);
+  assert.equal(app.ticks.length, 1); assert.equal(app.ticks[0].ms, 60000);
+  now = 150; app.ticks[0].fn();
+  assert.match(app.element("weeklyTitle").textContent, /本周/);
+  now = 200; app.events.visibilitychange();
+  assert.match(app.element("weeklyTitle").textContent, /已结束/);
+  assert.equal(app.calls.length, 0);
 });
