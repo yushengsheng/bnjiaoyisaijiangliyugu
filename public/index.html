@@ -280,6 +280,7 @@
           <section class="prophet-board" aria-labelledby="weeklyTitle">
             <div class="prophet-board-heading"><div><p class="eyebrow">每周预测收益</p><h2 id="weeklyTitle">周榜</h2></div><span class="prophet-label">收益积分</span></div>
             <p id="weeklyPeriod" class="prophet-period">按官方周次自动选择</p>
+            <div class="prophet-week-picker"><label for="weeklySelect">查看周次</label><select id="weeklySelect" class="prophet-data-action" disabled aria-describedby="weeklyPeriod"><option value="">刷新后可选择历史周榜</option></select></div>
             <form id="weeklySearchForm" class="prophet-search"><label for="weeklyRankSearch">搜索名次</label><input id="weeklyRankSearch" type="number" min="1" step="1" inputmode="numeric" placeholder="如 5000" required><button class="btn-secondary small prophet-data-action" type="submit" disabled>查询</button></form>
             <p class="prophet-period">点击奖励名次可展开逐名收益，每页 50 条。</p>
             <div class="prophet-table-wrap"><table><thead><tr><th scope="col">奖励名次</th><th scope="col">末位收益</th><th id="weeklyUnit" scope="col">档位奖励</th></tr></thead><tbody id="weeklyRows"><tr><td colspan="3" class="prophet-empty">点击“刷新榜单”获取门槛</td></tr></tbody></table></div>

@@ -22,6 +22,9 @@
 .prophet-search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 .prophet-search label { white-space: nowrap; }
 .prophet-search input { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--border-line); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); }
+.prophet-week-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; }
+.prophet-week-picker label { white-space: nowrap; }
+.prophet-week-picker select { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--border-line); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font: inherit; }
 .prophet-rank-toggle { padding: 4px 0; border: 0; background: none; color: var(--color-blue); cursor: pointer; font: inherit; text-align: left; }
 .prophet-rank-toggle[aria-expanded="true"] { font-weight: 700; }
 .prophet-details { border-top: 2px solid var(--border-line); padding-top: 16px; }

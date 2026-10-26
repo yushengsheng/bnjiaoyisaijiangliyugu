@@ -10,7 +10,7 @@
 bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto "=https" --proto-redir "=https" https://github.com/yushengsheng/bnjiaoyisaijiangliyugu/releases/latest/download/upgrade-linux.sh -o "$d/upgrade.sh"; bash "$d/upgrade.sh"'
 ```
 
-脚本校验 SHA-256 后调用新版安装包的 `--upgrade`。也可上传新版安装包后运行 `sudo bash EventLens-Linux-v2.2.2.run --upgrade`。
+脚本校验 SHA-256 后调用新版安装包的 `--upgrade`。也可上传新版安装包后运行 `sudo bash EventLens-Linux-v2.2.3.run --upgrade`。
 
 升级会短暂停止服务，备份旧程序、运行数据和配置，然后切换新版并用原端口和原账号在本机做健康检查。失败时回滚旧程序；不会用发布样本覆盖已有数据，不会重设网页账号，不会重装 Node/浏览器或修改服务、自动更新设置、防火墙。原服务停止时，升级验收后仍保持停止；开机启动状态保持原样。恢复备份只保存在服务器程序目录的 `backups` 下，含敏感配置，仅管理员可读，不应上传或公开。
 
@@ -20,7 +20,7 @@ bash -c 'set -e; d=$(mktemp -d); trap "rm -rf -- \"$d\"" EXIT; curl -fL --proto 
 
 初次使用建议选择 **Ubuntu 24.04、x86_64 / amd64、2 GB 或更多内存** 的云服务器。已有服务器也支持 Ubuntu 22.04+、Debian 12+、Rocky/AlmaLinux/RHEL 9+、Fedora 40+。需要普通 systemd 系统、root 或 sudo 权限，以及能下载 Node.js 和 Chrome 的网络；目前安装包不支持 ARM 服务器和未启用 systemd 的容器。
 
-下载提供的 **EventLens-Linux-v2.2.2.run**。这是单文件安装包，里面已经包含本次修改后的完整程序，不需要从 GitHub 下载代码，也不需要先安装 Node.js。
+下载提供的 **EventLens-Linux-v2.2.3.run**。这是单文件安装包，里面已经包含本次修改后的完整程序，不需要从 GitHub 下载代码，也不需要先安装 Node.js。
 
 ## 2. 登录服务器并上传安装包
 
@@ -42,7 +42,7 @@ ls EventLens-Linux-*.run
 推荐这样输入，**把大写提示词替换成自己的值，不要原样复制提示词**：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 你设置的网页用户名
+sudo bash EventLens-Linux-v2.2.3.run 你的服务器公网IPv4 3000 你设置的网页用户名
 ```
 
 如果已经使用 root 登录，可以去掉命令开头的 `sudo`。
@@ -60,7 +60,7 @@ sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 你设置的
 你要求的“命令 + IP + 端口 + 用户名 + 密码”完整形式也支持：
 
 ```bash
-sudo bash EventLens-Linux-v2.2.2.run 你的服务器公网IPv4 3000 网页用户名 '你的网页密码'
+sudo bash EventLens-Linux-v2.2.3.run 你的服务器公网IPv4 3000 网页用户名 '你的网页密码'
 ```
 
 密码有空格或特殊字符时需正确引用；这里的示例单引号要求密码本身不含单引号。推荐前一种隐藏输入方式，它不会把网页密码写进命令历史。

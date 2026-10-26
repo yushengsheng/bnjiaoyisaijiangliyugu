@@ -241,11 +241,14 @@ function createServer({
         return sendJson(res, 200, { snapshot: await storage.getProphetSnapshot(), refreshing: prophetRefreshing });
       }
       if (pathname === "/api/prophet/refresh" && req.method === "POST") {
-        await parseBody(req);
+        const body = await parseBody(req);
+        if (body.weekIndex !== undefined && (!Number.isSafeInteger(body.weekIndex) || body.weekIndex < 1 || body.weekIndex > 52)) {
+          return sendError(res, 400, "周次无效");
+        }
         if (prophetRefreshing) return sendError(res, 429, "神算子正在刷新，请勿重复提交");
         prophetRefreshing = true;
         try {
-          const snapshot = await prophet.collect();
+          const snapshot = await prophet.collect(body.weekIndex === undefined ? {} : { weekIndex: body.weekIndex });
           await storage.saveProphetSnapshot(snapshot);
           return sendJson(res, 200, { snapshot });
         } finally { prophetRefreshing = false; }
@@ -256,8 +259,9 @@ function createServer({
         prophetRefreshing = true;
         try {
           const snapshot = await storage.getProphetSnapshot();
-          if (body.board === "weekly" && body.weekIndex !== snapshot?.week?.weekIndex) {
-            return sendError(res, 409, "周榜周次已变化，请先刷新榜单再查看明细");
+          const weeks = snapshot?.weeks || (snapshot?.week ? [snapshot.week] : []);
+          if (body.board === "weekly" && !weeks.some(week => week.weekIndex === body.weekIndex)) {
+            return sendError(res, 409, "未找到所选周次，请先刷新榜单再查看明细");
           }
           return sendJson(res, 200, await prophet.getRanks(body));
         } finally { prophetRefreshing = false; }

@@ -48,6 +48,9 @@ test("周次按官方时间切换，不固定第一周；活动前后明确状�
   assert.equal(selectWeek(weeks, 500).status, "upcoming");
   assert.equal(selectWeek(weeks, 3000).status, "ended");
   assert.throws(() => selectWeek([{ ...weeks[0], endMs: 2500 }, weeks[1]], 2100));
+  assert.equal(selectWeek(weeks, 2500, 1).weekIndex, 1);
+  assert.equal(selectWeek(weeks, 2500, 1).status, "ended");
+  assert.throws(() => selectWeek(weeks, 2500, 3), { statusCode: 400 });
 });
 
 test("神算子按整个赛季结束时间归档，不按单周归档，旧快照也能判定过期", () => {
@@ -65,11 +68,43 @@ test("首次游标定位所有奖励边界，按实际rank取值且不保存昵�
   const result = await collect(input);
   assert.equal(input.calls.length, 11);
   assert.equal(result.week.weekIndex, 2);
+  assert.deepEqual(result.weeks, weeks);
   assert.deepEqual(result.period, { startMs: 1000, endMs: 3000 });
   assert.equal(result.season.thresholds.at(-1).points, "-3999.0000000000000001");
   assert.equal(result.weekly.thresholds[4].points, "3901.0000000000000001");
   assert.ok(input.calls.filter(call => call.endpoint.endsWith("weekly")).every(call => call.weekIndex === 2));
   assert.doesNotMatch(JSON.stringify(result), /must-not-be-saved|cursor|fixture|avatar/);
+});
+
+test("历史周采集的全部分页绑定所选周次，不回退成本周", async () => {
+  const input = fixture();
+  const original = input.fetchImpl;
+  input.fetchImpl = async (url, options) => {
+    const response = await original(url, options);
+    const json = await response.json();
+    if (url.endsWith("weekly") && JSON.parse(options.body).weekIndex === 1) {
+      for (const row of json.data.leaderboardInfos) row.points = `-${row.rank}.1234567890123456`;
+    }
+    return reply(json.data);
+  };
+  const result = await collect({ ...input, weekIndex: 1 });
+  assert.equal(result.week.weekIndex, 1);
+  assert.equal(result.week.status, "ended");
+  assert.deepEqual(result.weeks, weeks);
+  assert.equal(result.weekly.thresholds.at(-1).points, "-8000.1234567890123456");
+  assert.equal(result.season.thresholds.at(-1).points, "-3999.0000000000000001");
+  assert.ok(input.calls.filter(call => call.endpoint.endsWith("weekly")).every(call => call.weekIndex === 1));
+});
+
+test("非法周次不请求上游，赛季外周次只读配置即拒绝", async () => {
+  for (const weekIndex of [null, "1", 0, -1, 1.5, 53]) {
+    const input = fixture();
+    await assert.rejects(collect({ ...input, weekIndex }), { statusCode: 400 });
+    assert.equal(input.calls.length, 0);
+  }
+  const input = fixture();
+  await assert.rejects(collect({ ...input, weekIndex: 3 }), { statusCode: 400 });
+  assert.deepEqual(input.calls.map(call => call.endpoint), ["query"]);
 });
 
 test("定位窗口缺目标时回退正常逐页，确认榜尾后缺失门槛为null而非0", async () => {

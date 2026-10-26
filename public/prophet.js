@@ -53,6 +53,7 @@
   }
   function updateControls() {
     document.querySelectorAll("#prophetPanel .prophet-data-action").forEach(button => { button.disabled = busy || !snapshot; });
+    el("weeklySelect").disabled = busy || !snapshot;
     for (const kind of kinds) {
       const page = detailPages[kind];
       el(`${kind}Prev`).disabled = busy || !page || page.start <= page.from;
@@ -110,12 +111,28 @@
     const state = now < week.startMs ? "未开始" : now >= week.endMs ? "已结束" : "本周";
     el("weeklyTitle").textContent = `第 ${week.weekIndex} 周 · ${state}`;
     el("weeklyPeriod").textContent = `${date(week.startMs)} — ${date(week.endMs)}`;
+    // 本地校时只更新选项标签，不改变正在查看的周次或重新采集。
+    for (const option of el("weeklySelect").children) {
+      const entry = (snapshot.weeks || [week]).find(item => String(item.weekIndex) === option.value);
+      if (!entry) continue;
+      const label = now < entry.startMs ? "未开始" : now >= entry.endMs ? "已结束" : "本周";
+      option.textContent = `第 ${entry.weekIndex} 周 · ${label}`;
+      option.disabled = now < entry.startMs && entry.weekIndex !== week.weekIndex;
+    }
   }
   function render(data) {
     snapshot = data;
     if (!snapshot) return;
     el("prophetTime").textContent = `采集时间 · ${date(snapshot.collectedAt)}`;
     el("seasonPeriod").textContent = snapshot.seasonId;
+    const select = el("weeklySelect");
+    select.replaceChildren();
+    for (const week of snapshot.weeks || [snapshot.week]) {
+      const option = document.createElement("option");
+      option.value = String(week.weekIndex);
+      select.append(option);
+    }
+    select.value = String(snapshot.week.weekIndex);
     updateWeekState();
     renderBoard("season", snapshot.season);
     renderBoard("weekly", snapshot.weekly);
@@ -138,7 +155,7 @@
     if (!response.ok) throw new Error(data.error || "读取失败，请稍后重试");
     return data;
   }
-  async function refresh() {
+  async function refresh(weekIndex = snapshot?.week?.weekIndex) {
     if (busy) return;
     busy = true;
     el("prophetRefresh").disabled = true;
@@ -146,11 +163,12 @@
     updateControls();
     status(snapshot ? "正在更新，当前仍显示上次成功数据；必要时逐页采集，可能需要约 2 分钟。" : "正在获取官方榜单，必要时逐页采集，可能需要约 2 分钟。" );
     try {
-      const data = await api("/api/prophet/refresh", { method: "POST", body: "{}" });
+      const data = await api("/api/prophet/refresh", { method: "POST", body: JSON.stringify(weekIndex === undefined ? {} : { weekIndex }) });
       render(data.snapshot);
       status("已更新。分数保留官方精度，奖励以官方最终结果为准。");
       document.dispatchEvent(new Event("eventlens:prophet-updated"));
     } catch (error) {
+      if (snapshot) el("weeklySelect").value = String(snapshot.week.weekIndex);
       status(`${error.message}。${snapshot ? "当前显示上次成功数据，未被覆盖。" : "尚无成功数据，可稍后重试。"}`, true);
     } finally {
       busy = false;
@@ -160,7 +178,13 @@
     }
   }
   async function init() {
-    el("prophetRefresh").addEventListener("click", refresh);
+    el("prophetRefresh").addEventListener("click", () => refresh());
+    el("weeklySelect").addEventListener("change", () => {
+      const weekIndex = Number(el("weeklySelect").value);
+      if (!snapshot || busy || weekIndex === snapshot.week.weekIndex) return;
+      if (!(snapshot.weeks || [snapshot.week]).some(week => week.weekIndex === weekIndex)) return;
+      return refresh(weekIndex);
+    });
     for (const kind of kinds) {
       el(`${kind}SearchForm`).addEventListener("submit", event => {
         event.preventDefault();
@@ -182,7 +206,7 @@
     try {
       const data = await api("/api/prophet");
       render(data.snapshot);
-      status(data.refreshing ? "另一个页面正在刷新，完成后点击刷新榜单获取最新结果。" : snapshot ? "当前显示本机保存的数据；点击刷新榜单可更新。" : "尚未采集。点击刷新榜单获取赛季与本周门槛。");
+      status(data.refreshing ? "另一个页面正在刷新，完成后点击刷新榜单获取最新结果。" : snapshot ? "当前显示本机保存的数据；可选择历史周次，点击刷新榜单更新所选周。" : "尚未采集。点击刷新榜单获取赛季与本周门槛，之后可选择历史周次。");
     } catch (error) { status(error.message, true); }
     finally { el("prophetRefresh").disabled = false; }
   }

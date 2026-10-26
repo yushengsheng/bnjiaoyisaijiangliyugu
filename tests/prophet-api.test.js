@@ -12,8 +12,8 @@ const original = prophet.collect;
 const originalRanks = prophet.getRanks;
 const snapshot = { seasonId: prophet.SEASON_ID, collectedAt: "2026-10-22T00:00:00.000Z", week: { weekIndex: 2 }, season: {}, weekly: {} };
 
-async function post(headers = {}) {
-  return fetch(`${base}/api/prophet/refresh`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: "{}" });
+async function post(headers = {}, body = {}) {
+  return fetch(`${base}/api/prophet/refresh`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 }
 test.before(async () => {
   server = createServer();
@@ -143,4 +143,33 @@ test("汇总采集期间也拒绝明细读取，完成后恢复", async () => {
     assert.equal((await ranks({ board: "season", rankFrom: 1 })).status, 429);
   } finally { release?.(); await pending; }
   assert.equal((await (await fetch(`${base}/api/prophet`)).json()).refreshing, false);
+});
+
+test("刷新传递历史周次并保存周次列表，其他页面仍可查询同赛季各周明细", async () => {
+  const before = await storage.getProphetSnapshot();
+  const historical = { ...snapshot, weeks: [{ weekIndex: 1 }, { weekIndex: 2 }], week: { weekIndex: 1 } };
+  const calls = [];
+  prophet.collect = async options => { calls.push(options); return historical; };
+  prophet.getRanks = async body => ({ ...body, rows: [] });
+  try {
+    for (const weekIndex of [null, "1", 0, 1.5, 53]) {
+      assert.equal((await post({ "X-EventLens-Token": token }, { weekIndex })).status, 400);
+    }
+    assert.equal(calls.length, 0);
+    const response = await post({ "X-EventLens-Token": token }, { weekIndex: 1 });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).snapshot, historical);
+    assert.deepEqual(calls, [{ weekIndex: 1 }]);
+    assert.deepEqual(await storage.getProphetSnapshot(), historical);
+    for (const weekIndex of [1, 2]) {
+      const detail = await ranks({ board: "weekly", rankFrom: 1, weekIndex });
+      assert.equal(detail.status, 200);
+      assert.equal((await detail.json()).weekIndex, weekIndex);
+    }
+    assert.equal((await ranks({ board: "weekly", rankFrom: 1, weekIndex: 3 })).status, 409);
+  } finally {
+    prophet.collect = original;
+    prophet.getRanks = originalRanks;
+    await storage.saveProphetSnapshot(before);
+  }
 });
